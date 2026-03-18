@@ -9,6 +9,14 @@
 
 ## 봇 실행
 
+아래 명령어는 NodeJS 기준.
+
+### 패키지 설치
+
+```shell
+npm install
+```
+
 ### 환경변수 설정
 
 `.env.template` 파일을 참고하여 `.env` 파일을 생성하고 알맞은 값을 설정한다.
@@ -36,6 +44,7 @@ sudo loginctl enable-linger $USER
 ```
 
 `nambibot.service` 파일을 참고하여 `~/.config/systemd/user/nambibot.service` 파일 작성.
+(예시 Unit 파일에서는 Bun 런타임을 사용한다.)
 
 ```shell
 systemctl --user daemon-reload

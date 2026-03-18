@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, MessageFlags } = require('discord.js');
+const { Client, Events, GatewayIntentBits, MessageFlags } = require('discord.js');
 require('dotenv').config();
 const { getAllStates, clearState } = require('./state');
 
@@ -25,11 +25,11 @@ const client = new Client({
   ],
 });
 
-client.once('ready', () => {
+client.once(Events.ClientReady, () => {
   console.log(`Bot ready as ${client.user.tag}`);
 });
 
-client.on('interactionCreate', async (interaction) => {
+client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) {
     return;
   }
@@ -69,7 +69,7 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-client.on('error', (error) => {
+client.on(Events.Error, (error) => {
   console.error('Client error:', error);
 });
 
@@ -86,6 +86,8 @@ async function shutdown(signal) {
   for (const state of getAllStates()) {
     clearState(state);
   }
+  // Wait for voice disconnect packets to be flushed before closing the WebSocket.
+  await new Promise(resolve => setTimeout(resolve, 500));
   client.destroy();
   process.exit(0);
 }
