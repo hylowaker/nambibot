@@ -1,4 +1,5 @@
-const { createAudioPlayer, AudioPlayerStatus } = require('@discordjs/voice');
+const { createAudioPlayer, AudioPlayerStatus, NoSubscriberBehavior } = require('@discordjs/voice');
+const stateBus = require('./web/stateBus');
 /** @typedef {import('./types').TrackItem} TrackItem */
 /** @typedef {import('./types').PlayerState} PlayerState */
 
@@ -13,13 +14,18 @@ function getState(guildId) {
   if (!states.has(guildId)) {
     /** @type {PlayerState} */
     const newState = {
-      player: createAudioPlayer(),
+      player: createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Play, maxMissedFrames: 300 } }),
       queue: [],
       connection: null,     // VoiceConnection
+      connectedChannelName: null,
       currentItem: null,
+      playStartTs: null,
+      history: [],
       _stopRequested: false,
       _playerInitialized: false,
+      _disconnectHandlerRegistered: false,
       textChannel: null,        // TextChannel for sending messages
+      _guildId: guildId,
     };
     states.set(guildId, newState);
   }
@@ -31,7 +37,8 @@ function getState(guildId) {
  * @param {PlayerState} state
  */
 function clearState(state) {
-  if (state.player.state.status !== AudioPlayerStatus.Idle) {
+  // 재생 중이거나 로딩 중(다운로드 중, player=Idle이지만 currentItem 존재)일 때 모두 취소
+  if (state.player.state.status !== AudioPlayerStatus.Idle || state.currentItem) {
     state._stopRequested = true;
     state.player.stop();
     state.currentItem = null;
@@ -40,8 +47,11 @@ function clearState(state) {
     state.connection.destroy();
     state.connection = null;
   }
+  state.connectedChannelName = null;
+  state._disconnectHandlerRegistered = false;
   state.textChannel = null;
   // TODO: 큐 초기화 여부 고민 필요 (현재는 유지)
+  stateBus.emit('stateChanged', state._guildId);
 }
 
 /**

@@ -15,7 +15,9 @@ async function execute(interaction) {
     });
   }
 
+  const current = state.currentItem;
   clearState(state);
+  if (current) state.queue.unshift(current);
 
   await interaction.reply('음성 채널에서 퇴장했습니다.');
 }

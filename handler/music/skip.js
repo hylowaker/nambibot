@@ -17,11 +17,15 @@ async function execute(interaction) {
     return interaction.reply({ content: '큐가 비어있습니다.', ephemeral: true });
   }
 
+  if (!state.playStartTs) {
+    return interaction.reply({ content: '현재 곡을 불러오는 중입니다. 로딩이 끝난 후 다시 시도해주세요.', ephemeral: true });
+  }
+
   const item = state.queue.shift();
 
   // Stop current playback without triggering auto-play
   if (state.player.state.status !== AudioPlayerStatus.Idle) {
-    state._stopRequested = true;
+    state._skipAutoAdvance = true;
     state.player.stop();
   }
 

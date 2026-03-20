@@ -42,6 +42,8 @@ async function joinToChannel(guild, member, channelName) {
     }
   }
 
+  console.log(`[voice] [${guild.name}] 채널 "${channel.name}" 연결 시도... (멤버 수: ${channel.members.size}명)`);
+
   // Join the channel
   const connection = joinVoiceChannel({
     channelId: channel.id,
@@ -54,28 +56,45 @@ async function joinToChannel(guild, member, channelName) {
   state.connection = connection;
   initPlayer(guild.id);
 
-  // Handle unexpected disconnection
-  connection.on(VoiceConnectionStatus.Disconnected, async () => {
-    try {
-      await Promise.race([
-        entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
-        entersState(connection, VoiceConnectionStatus.Connecting, 5_000),
-      ]);
-    } catch {
-      connection.destroy();
-      state.connection = null;
-      state.currentItem = null;
-    }
-  });
+  // Handle unexpected disconnection (register only once per connection)
+  if (!state._disconnectHandlerRegistered) {
+    state._disconnectHandlerRegistered = true;
+    connection.on(VoiceConnectionStatus.Disconnected, async () => {
+      console.warn(`[voice] [${guild.name}] 연결 끊김 — 재연결 시도 중...`);
+      try {
+        await Promise.race([
+          entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
+          entersState(connection, VoiceConnectionStatus.Connecting, 5_000),
+        ]);
+        console.log(`[voice] [${guild.name}] 재연결 성공`);
+        const stateBus = require('./web/stateBus');
+        stateBus.emit('stateChanged', state._guildId);
+      } catch {
+        console.warn(`[voice] [${guild.name}] 재연결 실패 — 연결 해제`);
+        connection.destroy();
+        state.connection = null;
+        state.connectedChannelName = null;
+        state.currentItem = null;
+        const stateBus = require('./web/stateBus');
+        stateBus.emit('stateChanged', state._guildId);
+      }
+    });
+  }
 
   // Wait until ready
   try {
     await entersState(connection, VoiceConnectionStatus.Ready, 10_000);
   } catch {
+    console.error(`[voice] [${guild.name}] 채널 "${channel.name}" Ready 상태 진입 실패 (10초 초과)`);
     connection.destroy();
     state.connection = null;
+    state.connectedChannelName = null;
     throw new Error('음성 채널 연결에 실패했습니다.');
   }
+
+  // Store channel name after confirmed ready
+  state.connectedChannelName = channel.name;
+  console.log(`[voice] [${guild.name}] 채널 "${channel.name}" 연결 완료`);
 
   return channel;
 }
