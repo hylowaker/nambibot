@@ -18,13 +18,17 @@
 
 </div>
 
+<kbd>
+<img width="1939" height="1190" alt="image" src="https://github.com/user-attachments/assets/cc8bb626-489d-43f8-8b2c-9791da8d18ab" style="border: 20px solid black;" />
+</kbd>
+
 ---
 
 ## Quick Start
 
 ```bash
 # 1. 저장소 클론
-git clone <저장소_URL> && cd nambibot
+https://github.com/hylowaker/nambibot.git && cd ./nambibot
 
 # 2. 실행 (처음이면 설정 마법사 자동 시작)
 ./examples/docker-run.sh
