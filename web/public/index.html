@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>nambibot</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <div class="bot-profile">
+      <div class="bot-avatar-wrap">
+        <img id="bot-avatar" class="bot-avatar" alt="" style="display:none">
+        <span id="bot-avatar-fallback" class="bot-avatar-fallback">🎵</span>
+      </div>
+      <div class="bot-profile-text">
+        <span class="bot-profile-label">BOT</span>
+        <h1 id="bot-name">nambibot</h1>
+      </div>
+      <span id="conn-badge" class="err">오프라인</span>
+    </div>
+
+    <div class="header-divider"></div>
+
+    <div class="guild-profile">
+      <img id="guild-icon" class="guild-icon" alt="" style="display:none">
+      <div class="guild-profile-text">
+        <span class="guild-profile-label">SERVER</span>
+        <div class="guild-select-wrap">
+          <select id="guild-select"><option value="">서버 선택...</option></select>
+          <span id="guild-lock" class="guild-lock" style="display:none">🔒</span>
+        </div>
+      </div>
+    </div>
+
+    <a href="/logs" class="nav-logs-btn" title="시스템 로그" target="_blank" rel="noopener">📋 로그</a>
+  </header>
+
+  <div class="layout">
+    <div class="col-main">
+
+      <!-- Now Playing -->
+      <div class="card">
+        <h2>Now Playing</h2>
+        <div class="now-playing-body">
+          <!-- CD icon -->
+          <div class="cd idle" id="cd-icon">
+            <div class="cd-groove"></div>
+            <div class="cd-label"></div>
+            <div class="cd-hole"></div>
+          </div>
+          <!-- Track info + controls -->
+          <div class="now-playing-info">
+            <div id="now-playing-title" class="now-playing-title idle">재생 중인 항목 없음</div>
+            <div id="now-playing-sub" class="now-playing-sub" style="display:none"></div>
+            <div id="play-progress" class="play-progress" style="display:none">
+              <div class="play-progress-bar-track">
+                <div id="play-progress-fill" class="play-progress-fill"></div>
+              </div>
+              <div class="play-progress-times">
+                <span id="play-progress-current">0:00</span>
+                <span id="play-progress-duration"></span>
+              </div>
+            </div>
+            <div class="controls">
+              <button class="btn-secondary" id="btn-pause">⏸ 일시정지</button>
+              <button class="btn-primary"   id="btn-resume" style="display:none">▶ 재개</button>
+              <button class="btn-primary"   id="btn-skip">⏭ 스킵</button>
+              <button class="btn-danger"    id="btn-delete-current">✕ 삭제</button>
+            </div>
+            <div id="now-playing-hint" class="now-playing-hint" style="display:none"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Queue -->
+      <div class="card">
+        <div class="queue-header">
+          <h2>대기열 <span id="queue-count" class="queue-count"></span></h2>
+          <div class="queue-header-actions">
+            <button class="btn-secondary btn-sm" id="btn-shuffle">🔀 섞기</button>
+            <button class="btn-secondary btn-sm" id="btn-dedupe">✦ 중복 제거</button>
+            <button class="btn-secondary btn-sm" id="btn-save-playlist" title="현재 대기열을 플레이리스트로 저장">💾 저장</button>
+            <button class="btn-secondary btn-sm" id="btn-load-playlist" title="저장된 플레이리스트 불러오기">📂 불러오기</button>
+            <button class="btn-danger btn-sm" id="btn-purge">전체 삭제</button>
+          </div>
+        </div>
+        <div class="queue-search">
+          <input type="text" id="input-search" placeholder="🔍 제목으로 검색..." autocomplete="off">
+        </div>
+        <ol id="queue-list" class="queue-list">
+          <li class="queue-empty">대기열이 비어있습니다.</li>
+        </ol>
+      </div>
+
+      <!-- Add to queue -->
+      <div class="card" id="card-add-queue">
+        <h2>대기열에 추가</h2>
+        <div id="add-queue-hint" class="add-queue-hint" style="display:none"></div>
+        <form class="url-form" id="form-queue">
+          <input type="text" id="input-url" placeholder="YouTube URL 또는 플레이리스트 URL" autocomplete="off">
+          <button type="submit" class="btn-primary" id="btn-queue">추가</button>
+        </form>
+        <div id="queue-progress" class="queue-progress" style="display:none"></div>
+      </div>
+
+    </div>
+
+    <!-- Right sidebar: voice + history -->
+    <div class="col-side">
+      <div class="card voice-card">
+        <h2>음성 채널</h2>
+
+        <div class="voice-content">
+          <!-- 연결 중일 때 -->
+
+          <div id="voice-connected-banner" class="voice-connected-banner" style="display:none">
+            <span id="vbanner-icon" class="vbanner-icon">🔊</span>
+            <span id="voice-channel-name" class="vbanner-name"></span>
+            <button class="btn-danger btn-sm" id="btn-leave">퇴장</button>
+          </div>
+
+          <!-- 연결 안 됐을 때 -->
+          <div id="voice-disc-msg" class="voice-disc-msg">연결되지 않음</div>
+
+          <!-- 채널 선택 (선택 즉시 참가) -->
+          <div class="voice-channel-select-wrap">
+            <select id="select-channel" class="voice-channel-select">
+              <option value="">채널 선택하여 참가...</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card card-history">
+        <h2>재생 히스토리 <span id="history-count" class="queue-count"></span></h2>
+        <ol id="history-list" class="history-list">
+          <li class="history-empty">재생 기록이 없습니다.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-container" class="toast-container"></div>
+
+  <div id="offline-overlay">
+    <div class="offline-card">
+      <div class="offline-icon">⚡</div>
+      <div class="offline-title">서버 재연결 실패</div>
+      <div class="offline-desc">서버에 연결할 수 없습니다.<br>계속 재연결을 시도하고 있습니다.</div>
+      <div class="offline-attempts" id="offline-attempts"></div>
+    </div>
+  </div>
+
+<script src="/socket.io/socket.io.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

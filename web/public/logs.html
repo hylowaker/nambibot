@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>nambibot – 시스템 로그</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    /* ════════════════════════════
+       헤더 (메인 페이지와 동일한 구조)
+       ════════════════════════════ */
+    .logs-header {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+      padding: 13px 20px;
+      border-bottom: 1px solid rgba(96,128,255,0.3);
+      background: rgba(10,12,24,0.72);
+      backdrop-filter: blur(28px) saturate(180%);
+      -webkit-backdrop-filter: blur(28px) saturate(180%);
+      box-shadow: 0 1px 0 rgba(255,255,255,0.06), inset 0 1px 0 rgba(255,255,255,0.07);
+      flex-shrink: 0;
+      z-index: 10;
+      /* style.css header 스타일 오버라이드 */
+      margin-bottom: 0;
+      padding-bottom: 13px;
+    }
+
+    /* 왼쪽: LOG 라벨 + 시스템 로그 제목 */
+    .logs-title-section {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex: 1;
+      min-width: 0;
+    }
+    .logs-title-label {
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: #30d158;
+      line-height: 1;
+    }
+    .logs-title-name {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* 오른쪽: 봇 프로필 (메인 페이지 .bot-profile과 동일) */
+    .logs-bot-profile {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .logs-avatar-wrap {
+      position: relative;
+      width: 38px;
+      height: 38px;
+      flex-shrink: 0;
+    }
+    .logs-avatar {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid var(--accent2);
+      box-shadow: 0 0 0 3px rgba(82,113,255,0.2);
+      display: block;
+    }
+    .logs-avatar-fallback {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: var(--surface2);
+      border: 2px solid var(--accent2);
+      box-shadow: 0 0 0 3px rgba(82,113,255,0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+    }
+    .logs-profile-text {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .logs-profile-label {
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: var(--accent2);
+      line-height: 1;
+    }
+    .logs-bot-name {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    /* ════════════════════════════
+       바디 (헤더 아래 전체 영역)
+       ════════════════════════════ */
+    .logs-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    /* ════════════════════════════
+       툴바
+       ════════════════════════════ */
+    .logs-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 8px 20px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      background: rgba(7,8,15,0.65);
+      backdrop-filter: blur(20px) saturate(160%);
+      -webkit-backdrop-filter: blur(20px) saturate(160%);
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+    .log-filters { display: flex; gap: 4px; }
+    .filter-btn {
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 20px;
+      padding: 3px 11px;
+      font-size: 0.73rem;
+      font-weight: 600;
+      cursor: pointer;
+      background: rgba(255,255,255,0.05);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      color: var(--text-muted);
+      min-height: 24px;
+      letter-spacing: 0.04em;
+      transition: all 0.15s;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+    }
+    .filter-btn:hover { background: rgba(255,255,255,0.1); color: var(--text); }
+    .filter-btn.active                     { background: rgba(96,128,255,0.18);  color: #a0baff;       border-color: rgba(96,128,255,0.45); }
+    .filter-btn[data-level="warn"].active  { background: rgba(229,192,123,0.14); color: #e5c07b;       border-color: rgba(229,192,123,0.4); }
+    .filter-btn[data-level="error"].active { background: rgba(255,55,90,0.14);   color: #ff8095;       border-color: rgba(255,55,90,0.4); }
+    .filter-btn[data-level="all"].active   { color: #a0baff; border-color: rgba(96,128,255,0.5); background: rgba(96,128,255,0.14); }
+
+    .toolbar-right { display: flex; gap: 8px; align-items: center; }
+    .log-search-input {
+      background: rgba(0,0,0,0.35);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 8px;
+      color: #fff;
+      padding: 4px 10px;
+      font-size: 0.78rem;
+      outline: none;
+      width: 200px;
+      font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+    }
+    .log-search-input:focus {
+      border-color: rgba(96,128,255,0.5);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 0 0 3px rgba(96,128,255,0.12);
+    }
+    .log-search-input::placeholder { color: rgba(255,255,255,0.45); }
+    .log-count {
+      font-size: 0.73rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+    mark.log-highlight {
+      background: rgba(82, 113, 255, 0.35);
+      color: var(--text);
+      border-radius: 2px;
+      padding: 0 1px;
+    }
+
+    /* ════════════════════════════
+       시스템 환경 카드
+       ════════════════════════════ */
+    .sysinfo-section {
+      flex-shrink: 0;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      background: rgba(255,255,255,0.03);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+    .sysinfo-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 20px 7px 17px;
+      cursor: default;
+      user-select: none;
+      border-left: 3px solid rgba(96,128,255,0.55);
+    }
+    .sysinfo-title {
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent2);
+      opacity: 0.85;
+    }
+    .sysinfo-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sysinfo-refresh-btn {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      background: rgba(255,255,255,0.06);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      cursor: pointer;
+      padding: 4px 9px;
+      min-height: 0;
+      line-height: 1;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+    }
+    .sysinfo-refresh-btn:hover {
+      background: rgba(255,255,255,0.11);
+      color: var(--text);
+      border-color: rgba(255,255,255,0.18);
+      opacity: 1;
+    }
+    .sysinfo-toggle-btn {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: rgba(255,255,255,0.06);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      cursor: pointer;
+      padding: 4px 10px;
+      min-height: 0;
+      letter-spacing: 0.02em;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+    }
+    .sysinfo-toggle-btn:hover {
+      background: rgba(255,255,255,0.11);
+      color: var(--text);
+      border-color: rgba(255,255,255,0.18);
+      opacity: 1;
+    }
+
+    .sysinfo-body {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+      gap: 4px 16px;
+      padding: 4px 20px 12px;
+      overflow-y: auto;
+      max-height: 260px;
+      background: rgba(0,0,8,0.25);
+    }
+    .sysinfo-body::-webkit-scrollbar { width: 6px; }
+    .sysinfo-body::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); border-radius: 3px; }
+    .sysinfo-body::-webkit-scrollbar-thumb { background: rgba(96,128,255,0.4); border-radius: 3px; }
+    .sysinfo-body.collapsed { display: none; }
+
+    /* 그룹 라벨: 전체 너비 */
+    .sysinfo-group-label {
+      grid-column: 1 / -1;
+      font-size: 0.58rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent2);
+      opacity: 0.75;
+      padding-top: 7px;
+      border-top: 1px solid var(--border);
+      margin-top: 1px;
+    }
+    .sysinfo-group-label:first-child {
+      border-top: none;
+      padding-top: 2px;
+      margin-top: 0;
+    }
+
+    .sysinfo-item {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .sysinfo-key {
+      font-size: 0.58rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      opacity: 0.7;
+    }
+    .sysinfo-val {
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      font-size: 0.73rem;
+      color: var(--text);
+      opacity: 0.88;
+      word-break: break-all;
+    }
+
+    /* 환경 변수 목록 */
+    .sysinfo-env-list {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px 12px;
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      font-size: 0.68rem;
+    }
+    .sysinfo-env-row {
+      display: flex;
+      gap: 4px;
+      min-width: 0;
+      line-height: 1.5;
+    }
+    .sysinfo-env-key {
+      color: var(--accent2);
+      opacity: 0.85;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .sysinfo-env-eq {
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+    .sysinfo-env-val {
+      color: var(--text);
+      opacity: 0.7;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+
+    /* ════════════════════════════
+       로그 컨테이너
+       ════════════════════════════ */
+    .logs-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px 0;
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      font-size: 0.79rem;
+      line-height: 1.65;
+      position: relative;
+    }
+    .logs-container::-webkit-scrollbar { width: 5px; }
+    .logs-container::-webkit-scrollbar-track { background: transparent; }
+    .logs-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    /* ── 로그 엔트리 ── */
+    .log-entry {
+      display: flex;
+      align-items: baseline;
+      gap: 0;
+      padding: 2px 20px;
+      border-left: 2px solid transparent;
+      transition: background 0.1s;
+    }
+    .log-entry:hover { background: rgba(255,255,255,0.03); }
+
+    .log-entry--warn {
+      border-left-color: rgba(229, 192, 123, 0.45);
+      background: rgba(229, 192, 123, 0.03);
+    }
+    .log-entry--warn:hover { background: rgba(229, 192, 123, 0.06); }
+
+    .log-entry--error {
+      border-left-color: rgba(233, 69, 96, 0.5);
+      background: rgba(233, 69, 96, 0.04);
+    }
+    .log-entry--error:hover { background: rgba(233, 69, 96, 0.08); }
+
+    .log-ts {
+      color: var(--text-muted);
+      flex-shrink: 0;
+      font-size: 0.71rem;
+      opacity: 0.55;
+      width: 184px;
+    }
+
+    .log-badge {
+      flex-shrink: 0;
+      font-size: 0.63rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      padding: 0px 5px;
+      border-radius: 3px;
+      margin-right: 10px;
+      width: 36px;
+      text-align: center;
+      line-height: 1.5;
+      position: relative;
+      top: -1px;
+    }
+    .log-entry--info  .log-badge { background: rgba(122,179,224,0.12); color: #7ab3e0; }
+    .log-entry--warn  .log-badge { background: rgba(229,192,123,0.15); color: #e5c07b; }
+    .log-entry--error .log-badge { background: rgba(233,69,96,0.15);   color: var(--accent); }
+
+    .log-msg {
+      color: var(--text);
+      word-break: break-all;
+      white-space: pre-wrap;
+      flex: 1;
+      min-width: 0;
+      opacity: 0.88;
+    }
+    .log-entry--warn  .log-msg { color: #debb7a; opacity: 1; }
+    .log-entry--error .log-msg { color: #ef8492; opacity: 1; }
+
+    /* ── 빈 상태 ── */
+    .logs-empty {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      padding: 32px 20px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      opacity: 0.6;
+    }
+
+    /* ── 스크롤 하단 버튼 ── */
+    .scroll-to-bottom {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: rgba(90,118,255,0.75);
+      backdrop-filter: blur(20px) saturate(160%);
+      -webkit-backdrop-filter: blur(20px) saturate(160%);
+      color: #fff;
+      border: 1px solid rgba(130,155,255,0.4);
+      border-radius: 20px;
+      padding: 7px 14px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(90,118,255,0.35), inset 0 1px 0 rgba(255,255,255,0.2);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+      z-index: 20;
+    }
+    .scroll-to-bottom.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* ════════════════════════════
+       Tablet ≤ 768px
+       ════════════════════════════ */
+    @media (max-width: 768px) {
+      .logs-header  { padding: 11px 14px; }
+      .logs-toolbar { padding: 7px 14px; }
+      .sysinfo-header { padding: 6px 14px; }
+      .sysinfo-body { padding: 0 14px 8px; gap: 3px 12px; max-height: 220px; }
+      .sysinfo-env-list { grid-template-columns: 1fr 1fr; }
+      .log-search-input { width: 160px; }
+      .logs-container { padding: 4px 0; }
+      .log-entry { padding: 2px 14px; }
+    }
+
+    /* ════════════════════════════
+       Mobile ≤ 520px
+       ════════════════════════════ */
+    @media (max-width: 520px) {
+      .logs-header {
+        gap: 0;
+        padding: 0;
+        border-bottom: none;
+        background: transparent;
+        flex-wrap: wrap;
+        align-items: stretch;
+        margin-bottom: 10px;
+      }
+      .header-divider { display: none; }
+
+      .logs-title-section {
+        flex: 0 0 100%;
+        padding: 10px 12px;
+        background: rgba(48,209,88,0.06);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(48,209,88,0.18);
+        border-radius: 14px 14px 0 0;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+      }
+      .logs-title-name { font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+      .logs-bot-profile {
+        flex: 0 0 100%;
+        padding: 10px 12px;
+        background: rgba(255,255,255,0.04);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-top: none;
+        border-radius: 0 0 14px 14px;
+      }
+      .logs-bot-name { font-size: 0.9rem; }
+      .logs-avatar-wrap { width: 30px; height: 30px; }
+      .logs-avatar, .logs-avatar-fallback { width: 30px; height: 30px; font-size: 0.9rem; }
+
+      .sysinfo-header { padding: 6px 12px; }
+      .sysinfo-body { grid-template-columns: 1fr 1fr; padding: 0 12px 8px; max-height: 180px; }
+      .sysinfo-val { font-size: 0.69rem; }
+      .sysinfo-env-list { grid-template-columns: 1fr; }
+      .sysinfo-env-row { font-size: 0.64rem; }
+
+      /* 툴바: 2행 */
+      .logs-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 7px;
+        padding: 8px 12px;
+      }
+      .log-filters { flex-wrap: wrap; gap: 4px; }
+      .toolbar-right { display: flex; gap: 6px; align-items: center; }
+      .log-search-input { flex: 1; width: auto; min-width: 0; font-size: 0.8rem; }
+      .log-count { flex-shrink: 0; }
+
+      /* 로그 엔트리 */
+      .logs-container { padding: 2px 0; font-size: 0.74rem; }
+      .log-entry { padding: 3px 12px; }
+      .log-ts { display: none; }
+      .log-badge { font-size: 0.6rem; width: 32px; margin-right: 7px; }
+      .log-msg { font-size: 0.74rem; }
+
+      .scroll-to-bottom { bottom: 14px; right: 12px; padding: 6px 12px; font-size: 0.75rem; }
+    }
+  </style>
+</head>
+<body>
+  <header class="logs-header">
+    <!-- 왼쪽: 페이지 제목 -->
+    <div class="logs-title-section">
+      <span class="logs-title-label">LOG</span>
+      <span class="logs-title-name">시스템 로그</span>
+    </div>
+
+    <div class="header-divider"></div>
+
+    <!-- 오른쪽: 봇 프로필 + 연결 상태 -->
+    <div class="logs-bot-profile">
+      <div class="logs-avatar-wrap">
+        <img id="logs-bot-avatar" class="logs-avatar" alt="" style="display:none">
+        <span id="logs-avatar-fallback" class="logs-avatar-fallback">🎵</span>
+      </div>
+      <div class="logs-profile-text">
+        <span class="logs-profile-label">BOT</span>
+        <span class="logs-bot-name" id="logs-bot-name">nambibot</span>
+      </div>
+      <span id="conn-badge" class="err">오프라인</span>
+    </div>
+  </header>
+
+  <div class="logs-body">
+  <div class="logs-toolbar">
+    <div class="log-filters">
+      <button class="filter-btn active" data-level="all">전체</button>
+      <button class="filter-btn" data-level="info">INFO</button>
+      <button class="filter-btn" data-level="warn">WARN</button>
+      <button class="filter-btn" data-level="error">ERROR</button>
+    </div>
+    <div class="toolbar-right">
+      <input type="text" id="input-log-search" class="log-search-input" placeholder="🔍 로그 검색..." autocomplete="off">
+      <span class="log-count" id="log-count"></span>
+    </div>
+  </div>
+
+  <!-- 시스템 환경 카드 -->
+  <div class="sysinfo-section">
+    <div class="sysinfo-header">
+      <span class="sysinfo-title">시스템 환경</span>
+      <div class="sysinfo-actions">
+        <button class="sysinfo-refresh-btn" id="btn-sysinfo-refresh" title="새로고침">↻</button>
+        <button class="sysinfo-toggle-btn" id="btn-sysinfo-toggle">▼ 펼치기</button>
+      </div>
+    </div>
+    <div class="sysinfo-body collapsed" id="sysinfo-body">
+
+      <!-- 런타임 -->
+      <div class="sysinfo-group-label">런타임</div>
+      <div class="sysinfo-item">
+        <span class="sysinfo-key">Node.js</span>
+        <span class="sysinfo-val" id="si-node">—</span>
+      </div>
+      <div class="sysinfo-item">
+        <span class="sysinfo-key">PID</span>
+        <span class="sysinfo-val" id="si-pid">—</span>
+      </div>
+      <div class="sysinfo-item">
+        <span class="sysinfo-key">NODE_ENV</span>
+        <span class="sysinfo-val" id="si-env">—</span>
+      </div>
+      <div class="sysinfo-item">
+        <span class="sysinfo-key">프로세스 업타임</span>
+        <span class="sysinfo-val" id="si-uptime">—</span>
+      </div>
+
+      <!-- 프로세스 메모리 -->
+      <div class="sysinfo-group-label">프로세스 메모리</div>
+      <div class="sysinfo-item">
+        <span class="sysinfo-key">RSS</span>
+        <span class="sysinfo-val" id="si-rss">—</span>
+      </div>
+      <div class="sysinfo-item">
+        <span class="sysinfo-key">Heap 사용</span>
+        <span class="sysinfo-val" id="si-heap-used">—</span>
+      </div>
+      <div class="sysinfo-item">
+        <span class="sysinfo-key">Heap 전체</span>
+        <span class="sysinfo-val" id="si-heap-total">—</span>
+      </div>
+      <div class="sysinfo-item">
+        <span class="sysinfo-key">External</span>
+        <span class="sysinfo-val" id="si-external">—</span>
+      </div>
+
+      <!-- 시스템 -->
+      <div class="sysinfo-group-label">시스템</div>
+      <div class="sysinfo-item">
+        <span class="sysinfo-key">OS 플랫폼</span>
+        <span class="sysinfo-val" id="si-platform">—</span>
+      </div>
+      <div class="sysinfo-item">
+        <span class="sysinfo-key">아키텍처</span>
+        <span class="sysinfo-val" id="si-arch">—</span>
+      </div>
+      <div class="sysinfo-item">
+        <span class="sysinfo-key">커널 버전</span>
+        <span class="sysinfo-val" id="si-release">—</span>
+      </div>
+      <div class="sysinfo-item">
+        <span class="sysinfo-key">호스트명</span>
+        <span class="sysinfo-val" id="si-hostname">—</span>
+      </div>
+      <div class="sysinfo-item">
+        <span class="sysinfo-key">시스템 업타임</span>
+        <span class="sysinfo-val" id="si-sys-uptime">—</span>
+      </div>
+
+      <!-- CPU -->
+      <div class="sysinfo-group-label">CPU</div>
+      <div class="sysinfo-item">
+        <span class="sysinfo-key">모델</span>
+        <span class="sysinfo-val" id="si-cpu">—</span>
+      </div>
+      <div class="sysinfo-item">
+        <span class="sysinfo-key">코어 수</span>
+        <span class="sysinfo-val" id="si-cores">—</span>
+      </div>
+      <div class="sysinfo-item">
+        <span class="sysinfo-key">부하 (1m / 5m / 15m)</span>
+        <span class="sysinfo-val" id="si-loadavg">—</span>
+      </div>
+
+      <!-- 시스템 메모리 -->
+      <div class="sysinfo-group-label">시스템 메모리</div>
+      <div class="sysinfo-item">
+        <span class="sysinfo-key">전체</span>
+        <span class="sysinfo-val" id="si-mem-total">—</span>
+      </div>
+      <div class="sysinfo-item">
+        <span class="sysinfo-key">여유</span>
+        <span class="sysinfo-val" id="si-mem-free">—</span>
+      </div>
+      <div class="sysinfo-item">
+        <span class="sysinfo-key">사용</span>
+        <span class="sysinfo-val" id="si-mem-used">—</span>
+      </div>
+
+      <!-- 네트워크 -->
+      <div class="sysinfo-group-label">네트워크</div>
+      <div class="sysinfo-item">
+        <span class="sysinfo-key">IP 주소</span>
+        <span class="sysinfo-val" id="si-ips">—</span>
+      </div>
+
+      <!-- 환경 변수 -->
+      <div class="sysinfo-group-label">환경 변수</div>
+      <div class="sysinfo-env-list" id="si-env-list">
+        <!-- JS로 채움 -->
+      </div>
+
+    </div>
+  </div>
+
+  <div class="logs-container" id="logs-container">
+    <div class="logs-empty" id="logs-empty">로그가 없습니다.</div>
+  </div>
+
+  <button class="scroll-to-bottom" id="btn-scroll-bottom">↓ 최신 로그</button>
+  </div><!-- /.logs-body -->
+
+  <div id="offline-overlay">
+    <div class="offline-card">
+      <div class="offline-icon">⚡</div>
+      <div class="offline-title">서버 재연결 실패</div>
+      <div class="offline-desc">서버에 연결할 수 없습니다.<br>계속 재연결을 시도하고 있습니다.</div>
+      <div class="offline-attempts" id="offline-attempts"></div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/logs.js"></script>
+</body>
+</html>
