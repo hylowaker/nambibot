@@ -28,7 +28,7 @@
 
 ```bash
 # 1. 저장소 클론
-https://github.com/hylowaker/nambibot.git && cd ./nambibot
+git clone https://github.com/hylowaker/nambibot.git && cd ./nambibot
 
 # 2. 실행 (처음이면 설정 마법사 자동 시작)
 ./examples/docker-run.sh
@@ -47,7 +47,7 @@ https://github.com/hylowaker/nambibot.git && cd ./nambibot
   - [의존성 설치](#의존성-설치)
 - [설치 및 실행](#설치-및-실행)
   - [방법 1 — Docker (권장)](#방법-1--docker-권장)
-  - [방법 2 — Baremetal (nohup)](#방법-2--baremetal-nohup)
+  - [방법 2 — Baremetal (백그라운드)](#방법-2--baremetal-백그라운드)
   - [방법 3 — systemd 서비스](#방법-3--systemd-서비스)
 - [Web UI](#web-ui)
 - [슬래시 명령어](#슬래시-명령어)
@@ -196,17 +196,17 @@ docker rm -f nambibot             # 컨테이너 삭제 후 재배포 시 docker
 > Docker를 사용할 수 없는 환경을 위한 대안입니다.
 > Node.js 20+, ffmpeg, yt-dlp를 직접 설치해야 합니다. [의존성 설치](#의존성-설치) 참고.
 
-### Baremetal (nohup 백그라운드)
+### Baremetal (백그라운드)
 
 ```bash
 ./examples/baremetal-run.sh
 ```
 
-처음 실행하면 설정 마법사가 시작되며, 설정은 `~/.nambi/.env`에 **평문**으로 저장됩니다.
+처음 실행하면 설정 마법사가 시작되며, 설정은 `~/.nambi/.env.enc`에 **AES-256-GCM으로 암호화**되어 저장됩니다.
 
 ```bash
-tail -f ~/.nambi/nambibot.log        # 실시간 로그
-kill $(cat ~/.nambi/nambibot.pid)    # 중지
+./examples/baremetal-run.sh --logs   # 실행 중인 봇 로그 보기
+./examples/stop.sh                   # 중지
 ./examples/baremetal-run.sh          # 재시작
 ```
 
@@ -325,13 +325,13 @@ Discord 채팅창에서 `/` 입력 후 명령어를 사용합니다.
 
 ```
 ~/.nambi/
-├── queue-state.json    # 대기열 · 재생 히스토리 (서버별)
-├── logs.jsonl          # 시스템 로그 (최대 2,000줄, 자동 트림)
-├── .env.enc            # 암호화된 설정 파일 (Docker)
-├── .env                # 평문 설정 파일 (Baremetal / systemd)
-├── .passphrase         # 암호화 패스프레이즈 (Docker)
-├── nambibot.pid        # 프로세스 ID (Baremetal)
-└── nambibot.log        # 표준 출력 로그 (Baremetal)
+├── queue-state.json      # 대기열 · 재생 히스토리 (서버별)
+├── logs.jsonl            # 시스템 로그 (최대 2,000줄, 자동 트림)
+├── .env.enc              # 암호화된 설정 파일 (AES-256-GCM)
+├── .passphrase           # 암호화 패스프레이즈
+├── .commands-deployed    # 슬래시 명령어 등록 완료 표시
+├── nambibot.pid          # 프로세스 ID (Baremetal)
+└── nambibot.log          # 표준 출력 로그 (Baremetal)
 ```
 
 | 항목 | 내용 |
@@ -370,10 +370,12 @@ docker run -d \
 |----------|------|
 | `docker-run.sh` | Docker 이미지 빌드 및 컨테이너 실행 |
 | `docker-run.sh --logs` | 실행 중인 컨테이너 로그 보기 |
-| `baremetal-run.sh` | 호스트에서 백그라운드 실행 (nohup) |
+| `baremetal-run.sh` | 호스트에서 백그라운드 실행 |
+| `baremetal-run.sh --logs` | 실행 중인 봇 로그 보기 |
 | `systemd-setup.sh` | systemd 사용자 서비스 등록 |
+| `stop.sh` | 실행 중인 프로세스/컨테이너만 중지 (데이터 유지) |
 | `reconfigure.sh` | 설정 파일 재설정 (토큰 변경 등) |
-| `reset.sh` | 설정 초기화 및 컨테이너/서비스 제거 |
+| `reset.sh` | 설정 초기화 및 컨테이너/서비스/데이터 전체 제거 |
 | `show-password.sh` | 설정된 Web UI 비밀번호 확인 |
 
 ### 설정 변경
@@ -389,6 +391,7 @@ Discord 토큰이 변경되었거나 설정을 처음부터 다시 하고 싶을
 ```bash
 ./examples/docker-run.sh      # Docker
 ./examples/baremetal-run.sh   # Baremetal
+./examples/systemd-setup.sh   # systemd
 ```
 
 ---
