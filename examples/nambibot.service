@@ -2,10 +2,13 @@
 # systemd-setup.sh를 실행하면 경로가 자동으로 채워진 서비스 파일이 생성됩니다.
 #
 # 수동으로 등록할 경우:
-#   1. WorkingDirectory와 ExecStart의 경로를 실제 프로젝트 경로로 변경
+#   1. 아래 /path/to/nambibot 과 /home/USER 를 실제 경로로 변경
 #   2. cp examples/nambibot.service ~/.config/systemd/user/nambibot.service
 #   3. systemctl --user daemon-reload
 #   4. systemctl --user enable --now nambibot
+#
+# 참고: ExecStart 내 $$ 는 systemd에서 리터럴 $ 로 해석됩니다.
+#       설정 파일(.env.enc)을 복호화하여 환경변수로 주입한 뒤 봇을 실행합니다.
 
 [Unit]
 Description=NambiBot Discord Bot (User service)
@@ -13,9 +16,9 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/%u/nambibot
-EnvironmentFile=/home/%u/.nambi/.env
-ExecStart=/usr/bin/node /home/%u/nambibot/index.js
+WorkingDirectory=/path/to/nambibot
+Environment=NAMBI_DIR=/home/USER/.nambi
+ExecStart=/bin/bash -c 'NAMBI_PASSPHRASE=$$(cat /home/USER/.nambi/.passphrase) && exec env $$(NAMBI_PASSPHRASE=$$NAMBI_PASSPHRASE node /path/to/nambibot/scripts/env-crypto.js decrypt < /home/USER/.nambi/.env.enc 2>/dev/null | grep -v "^#" | grep -v "^$$" | xargs) NAMBI_DIR=/home/USER/.nambi node /path/to/nambibot/index.js'
 
 Restart=on-failure
 RestartSec=5s

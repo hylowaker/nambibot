@@ -124,8 +124,10 @@ WEB_PORT=${WEB_PORT:-3000}
 
 # 기존 컨테이너 제거
 if docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER_NAME" 2>/dev/null; then
-  log "기존 컨테이너 제거: ${CYAN}${CONTAINER_NAME}${R}"
+  _status=$(docker inspect --format '{{.State.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo "unknown")
+  log "기존 컨테이너 종료 및 제거: ${CYAN}${CONTAINER_NAME}${R}  (${_status})"
   docker rm -f "$CONTAINER_NAME" > /dev/null
+  ok "기존 컨테이너 제거 완료"
 fi
 
 # 포트 중복 검사

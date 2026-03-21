@@ -69,14 +69,26 @@ if docker images --format '{{.Repository}}' 2>/dev/null | grep -q "^${IMAGE_NAME
   FOUND=1
 fi
 
-NODE_PIDS=$(pgrep -f "node.*nambibot" 2>/dev/null || true)
-if [ -n "$NODE_PIDS" ]; then
-  for pid in $NODE_PIDS; do
-    CMD=$(ps -p "$pid" -o args= 2>/dev/null || echo "")
-    warn "Node.js 프로세스: ${CYAN}PID=${pid}${R}  ${DIM}${CMD}${R}"
-  done
-  FOUND=1
+PID_FILE="$NAMBI_DIR/nambibot.pid"
+NODE_PIDS=""
+if [ -f "$PID_FILE" ] && [ -s "$PID_FILE" ]; then
+  _filepid=$(cat "$PID_FILE")
+  if kill -0 "$_filepid" 2>/dev/null; then
+    NODE_PIDS="$_filepid"
+    CMD=$(ps -p "$_filepid" -o args= 2>/dev/null || echo "")
+    warn "Node.js 프로세스: ${CYAN}PID=${_filepid}${R}  ${DIM}${CMD}${R}"
+    FOUND=1
+  fi
 fi
+_pgrep_pids=$(pgrep -f "node.*index\.js" 2>/dev/null || true)
+for _pp in $_pgrep_pids; do
+  echo "$NODE_PIDS" | grep -qw "$_pp" && continue
+  CMD=$(ps -p "$_pp" -o args= 2>/dev/null || echo "")
+  echo "$CMD" | grep -q "nambibot\|index\.js" || continue
+  NODE_PIDS="${NODE_PIDS:+$NODE_PIDS }$_pp"
+  warn "Node.js 프로세스: ${CYAN}PID=${_pp}${R}  ${DIM}${CMD}${R}"
+  FOUND=1
+done
 
 if systemctl list-units --type=service 2>/dev/null | grep -q "${SERVICE_NAME}"; then
   SVC_STATUS=$(systemctl is-active "$SERVICE_NAME" 2>/dev/null || echo "unknown")
@@ -130,7 +142,6 @@ else
 fi
 
 # ── 2. Node.js 프로세스 종료 ──────────────────────────────
-NODE_PIDS=$(pgrep -f "node.*nambibot" 2>/dev/null || true)
 if [ -n "$NODE_PIDS" ]; then
   for pid in $NODE_PIDS; do
     log "Node.js 프로세스 종료: ${CYAN}PID=${pid}${R}"
@@ -138,18 +149,26 @@ if [ -n "$NODE_PIDS" ]; then
   done
   # 최대 5초 대기
   for _ in $(seq 1 10); do
-    REMAINING=$(pgrep -f "node.*nambibot" 2>/dev/null || true)
-    [ -z "$REMAINING" ] && break
+    still=""
+    for pid in $NODE_PIDS; do
+      kill -0 "$pid" 2>/dev/null && still="$still $pid"
+    done
+    [ -z "$still" ] && break
     sleep 0.5
   done
-  REMAINING=$(pgrep -f "node.*nambibot" 2>/dev/null || true)
-  if [ -n "$REMAINING" ]; then
-    warn "강제 종료 (SIGKILL): ${CYAN}${REMAINING}${R}"
-    kill -9 $REMAINING 2>/dev/null || true
+  still=""
+  for pid in $NODE_PIDS; do
+    kill -0 "$pid" 2>/dev/null && still="$still $pid"
+  done
+  if [ -n "$still" ]; then
+    warn "강제 종료 (SIGKILL):${CYAN}${still}${R}"
+    kill -9 $still 2>/dev/null || true
   fi
+  rm -f "$PID_FILE"
   ok "Node.js 프로세스 종료 완료"
 else
   skip "실행 중인 Node.js 프로세스 없음"
+  rm -f "$PID_FILE" 2>/dev/null || true
 fi
 
 # ── 3. systemd 서비스 중지 및 비활성화 ───────────────────

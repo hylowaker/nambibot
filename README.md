@@ -137,7 +137,7 @@ sudo chmod +x /usr/local/bin/yt-dlp
 먼저 저장소를 클론합니다.
 
 ```bash
-git clone <저장소_URL>
+git clone https://github.com/hylowaker/nambibot.git
 cd nambibot
 ```
 
@@ -392,9 +392,3 @@ Discord 토큰이 변경되었거나 설정을 처음부터 다시 하고 싶을
 ```
 
 ---
-
-<div align="center">
-
-Made with ♪
-
-</div>
