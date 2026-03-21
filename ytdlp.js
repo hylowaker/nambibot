@@ -71,7 +71,7 @@ const NOISE = ['BrokenPipeError', 'Broken pipe', 'Exception ignored', 'Error wri
 // Resolves with the temp file path when done. Caller is responsible for deleting the file.
 const DOWNLOAD_TIMEOUT_MS = 120_000; // 2분 초과 시 강제 종료
 
-function createAudioFile(url) {
+function createAudioFile(url, onProgress) {
   const tmpPath = path.join(os.tmpdir(), `nambi-${Date.now()}.ogg`);
   console.log(`[yt-dlp] 다운로드 시작: ${url}  →  ${tmpPath}`);
 
@@ -81,6 +81,7 @@ function createAudioFile(url) {
       '--no-playlist',
       '--output', '-',
       '--no-warnings',
+      '--newline',
       url,
     ]);
 
@@ -117,9 +118,19 @@ function createAudioFile(url) {
 
     ytProc.stdout.pipe(ffProc.stdin);
 
+    let lastPct = -1;
     ytProc.stderr.on('data', d => {
-      const msg = d.toString().trim();
-      if (msg && !NOISE.some(s => msg.includes(s))) console.error('[yt-dlp]', msg);
+      const raw = d.toString();
+      for (const line of raw.split('\n')) {
+        const m = line.match(/\[download\]\s+(\d+(?:\.\d+)?)%/);
+        if (m) {
+          const pct = Math.floor(parseFloat(m[1]));
+          if (pct !== lastPct) { lastPct = pct; onProgress?.(pct); }
+          continue;
+        }
+        const trimmed = line.trim();
+        if (trimmed && !NOISE.some(s => trimmed.includes(s))) console.error('[yt-dlp]', trimmed);
+      }
     });
     ffProc.stderr.on('data', d => {
       const msg = d.toString().trim();

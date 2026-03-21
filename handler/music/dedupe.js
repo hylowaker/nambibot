@@ -1,5 +1,6 @@
 const { MessageFlags, EmbedBuilder } = require('discord.js');
 const { getState } = require('../../state');
+const stateBus = require('../../web/stateBus');
 /** @typedef {import('discord.js').ChatInputCommandInteraction} ChatInputCommandInteraction */
 
 /**
@@ -15,33 +16,27 @@ async function execute(interaction) {
     });
   }
 
-  if (state.queue.length === 0) {
+  const before = state.queue.length;
+  const seen = new Set();
+  state.queue = state.queue.filter(item => {
+    if (seen.has(item.url)) return false;
+    seen.add(item.url);
+    return true;
+  });
+  const removed = before - state.queue.length;
+  stateBus.emit('stateChanged', interaction.guild.id);
+
+  if (removed === 0) {
     return interaction.reply({
-      content: '❌ 대기열이 비어있습니다.',
+      content: '✅ 중복 항목이 없습니다.',
       flags: MessageFlags.Ephemeral,
     });
   }
 
-  const indexOpt = interaction.options.getInteger('index');
-  let targetIndex;
-
-  if (indexOpt === null) {
-    targetIndex = state.queue.length - 1;
-  } else {
-    targetIndex = indexOpt - 1;
-    if (targetIndex < 0 || targetIndex >= state.queue.length) {
-      return interaction.reply({
-        content: `❌ INDEX가 범위를 벗어났습니다. (1~${state.queue.length})`,
-        flags: MessageFlags.Ephemeral,
-      });
-    }
-  }
-
-  const [removed] = state.queue.splice(targetIndex, 1);
   await interaction.reply({
     embeds: [new EmbedBuilder()
-      .setColor(0xFF375F)
-      .setDescription(`🗑️ **${removed.title}** 을(를) 대기열에서 삭제했습니다.`)],
+      .setColor(0x6080FF)
+      .setDescription(`✨ 중복 항목 **${removed}개**를 제거했습니다. (${state.queue.length}개 남음)`)],
   });
 }
 

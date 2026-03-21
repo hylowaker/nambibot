@@ -198,6 +198,13 @@ done
 echo "WEB_PORT=${WEB_PORT_VAL}" >> "$ENV_FILE"
 
 echo ""
+ask_default "WEB_UI_URL_VAL" "${CYAN}WEB_UI_URL  외부에서 접속하는 Web UI 주소" "http://localhost:${WEB_PORT_VAL}"
+hint "Discord /music webui 명령어로 이 주소가 표시됩니다."
+hint "역방향 프록시 등으로 외부 노출 시 실제 URL 입력 권장"
+hint "예시: https://music.example.com  또는  http://myserver.com:${WEB_PORT_VAL}"
+echo "WEB_UI_URL=${WEB_UI_URL_VAL}" >> "$ENV_FILE"
+
+echo ""
 printf "  ${YELLOW}╔══════════════════════════════════════════╗${RESET}\n"
 printf "  ${YELLOW}║  !  보안 권장사항                        ║${RESET}\n"
 printf "  ${YELLOW}║     퍼블릭 호스팅 시 반드시 비밀번호를   ║${RESET}\n"

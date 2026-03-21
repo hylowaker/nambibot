@@ -33,6 +33,15 @@ const cmdMusic = new SlashCommandBuilder()
   .addSubcommand(sub => sub
     .setName("show")
     .setDescription("현재 재생 중인 음악과 대기열 내용을 출력합니다.")
+    .addBooleanOption(opt => opt
+      .setName("hidden")
+      .setDescription("나에게만 보이도록 표시")
+      .setRequired(false)
+    )
+  )
+  .addSubcommand(sub => sub
+    .setName("np")
+    .setDescription("현재 재생 중인 항목을 확인합니다.")
   )
   .addSubcommand(sub => sub
     .setName("delete")
@@ -49,8 +58,8 @@ const cmdMusic = new SlashCommandBuilder()
     .setDescription("현재 대기열을 전부 삭제합니다.")
   )
   .addSubcommand(sub => sub
-    .setName("play")
-    .setDescription("대기열의 항목을 즉시 재생합니다.")
+    .setName("jump")
+    .setDescription("대기열의 특정 항목을 즉시 재생합니다.")
     .addIntegerOption(opt => opt
       .setName("index")
       .setDescription("항목 인덱스 (1부터 시작)")
@@ -70,6 +79,42 @@ const cmdMusic = new SlashCommandBuilder()
     .setName("leave")
     .setDescription("음성 채널에서 봇이 퇴장합니다.")
   )
+  .addSubcommand(sub => sub
+    .setName("pause")
+    .setDescription("현재 재생을 일시정지합니다.")
+  )
+  .addSubcommand(sub => sub
+    .setName("resume")
+    .setDescription("일시정지된 재생을 재개합니다.")
+  )
+  .addSubcommand(sub => sub
+    .setName("shuffle")
+    .setDescription("대기열 항목을 무작위로 섞습니다.")
+  )
+  .addSubcommand(sub => sub
+    .setName("dedupe")
+    .setDescription("대기열에서 중복 항목을 제거합니다.")
+  )
+  .addSubcommand(sub => sub
+    .setName("move")
+    .setDescription("대기열 항목의 순서를 변경합니다.")
+    .addIntegerOption(opt => opt
+      .setName("from")
+      .setDescription("이동할 항목 인덱스 (1부터 시작)")
+      .setMinValue(1)
+      .setRequired(true)
+    )
+    .addIntegerOption(opt => opt
+      .setName("to")
+      .setDescription("이동할 위치 인덱스 (1부터 시작)")
+      .setMinValue(1)
+      .setRequired(true)
+    )
+  )
+  .addSubcommand(sub => sub
+    .setName("webui")
+    .setDescription("Web UI 주소를 표시합니다.")
+  )
   .toJSON();
 
 // /version command
@@ -78,7 +123,31 @@ const cmdVersion = new SlashCommandBuilder()
   .setDescription("봇 버전 정보를 출력합니다.")
   .toJSON();
 
-const commands = [cmdMusic, cmdVersion];
+// /logs command
+const cmdLogs = new SlashCommandBuilder()
+  .setName(`${devPrefix}logs`)
+  .setDescription("서버 로그를 확인합니다.")
+  .addIntegerOption(opt => opt
+    .setName("count")
+    .setDescription("표시할 로그 수 (기본값: 20, 최대 30)")
+    .setMinValue(1)
+    .setMaxValue(30)
+    .setRequired(false)
+  )
+  .addStringOption(opt => opt
+    .setName("level")
+    .setDescription("로그 레벨 필터 (기본값: 전체)")
+    .setRequired(false)
+    .addChoices(
+      { name: '전체',  value: 'all' },
+      { name: 'INFO',  value: 'info' },
+      { name: 'WARN',  value: 'warn' },
+      { name: 'ERROR', value: 'error' },
+    )
+  )
+  .toJSON();
+
+const commands = [cmdMusic, cmdVersion, cmdLogs];
 
 const rest = new REST({ version: "10", timeout: 15_000 }).setToken(process.env.DISCORD_TOKEN);
 

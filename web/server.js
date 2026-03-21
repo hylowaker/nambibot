@@ -21,6 +21,7 @@ function buildSnapshot(client, guildId) {
     queue: [...state.queue],
     playerStatus: state.player.state.status,
     playStartTs: state.playStartTs ?? null,
+    downloadProgress: state.downloadProgress ?? null,
     history: (state.history ?? []).slice(0, 30),
   };
 }

@@ -1,4 +1,5 @@
 const { createAudioResource, StreamType, AudioPlayerStatus } = require('@discordjs/voice');
+const { EmbedBuilder } = require('discord.js');
 const { createReadStream, unlink, statSync } = require('fs');
 const { getState } = require('./state');
 const ytdlp = require('./ytdlp');
@@ -27,12 +28,20 @@ async function playItem(state, item) {
   console.log(`[player] [${guildId}] 다운로드 시작: "${item.title}"`);
   const downloadStart = Date.now();
   let tmpPath;
+  let lastEmittedPct = -1;
   try {
-    tmpPath = await ytdlp.createAudioFile(item.url);
+    tmpPath = await ytdlp.createAudioFile(item.url, (pct) => {
+      if (pct - lastEmittedPct >= 5 || pct === 100) {
+        lastEmittedPct = pct;
+        state.downloadProgress = pct;
+        stateBus.emit('stateChanged', guildId);
+      }
+    });
   } catch (err) {
     console.error(`[player] [${guildId}] 다운로드 실패 — 건너뜀: "${item.title}"  오류: ${err.message}`);
     state.currentItem = null;
     state.playStartTs = null;
+    state.downloadProgress = null;
     stateBus.emit('stateChanged', guildId);
     const next = state.queue.shift();
     if (next) {
@@ -43,6 +52,7 @@ async function playItem(state, item) {
     }
     return;
   }
+  state.downloadProgress = null;
   const elapsed = ((Date.now() - downloadStart) / 1000).toFixed(1);
 
   let fileSize = '?';
@@ -77,7 +87,11 @@ async function playItem(state, item) {
   console.log(`[player] [${guildId}] 재생 시작: "${item.title}"${durStr}`);
 
   if (state.textChannel) {
-    await state.textChannel.send(`▶ 지금 재생 중: **${state.currentItem.title}**`);
+    await state.textChannel.send({
+      embeds: [new EmbedBuilder()
+        .setColor(0x30D158)
+        .setDescription(`▶️ 지금 재생 중: **${state.currentItem.title}**`)],
+    });
   }
 }
 

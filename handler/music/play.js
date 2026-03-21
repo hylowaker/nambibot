@@ -1,4 +1,4 @@
-const { MessageFlags } = require('discord.js');
+const { MessageFlags, EmbedBuilder } = require('discord.js');
 const { AudioPlayerStatus } = require('@discordjs/voice');
 const { getState } = require('../../state');
 const { playItem } = require('../../player');
@@ -12,20 +12,22 @@ async function execute(interaction) {
 
   if (!state.connection) {
     return interaction.reply({
-      content: '봇이 음성 채널에 참가 중이지 않습니다.',
-      flags: MessageFlags.Ephemeral
+      content: '❌ 봇이 음성 채널에 참가 중이지 않습니다.',
+      flags: MessageFlags.Ephemeral,
     });
   }
 
   if (state.queue.length === 0) {
     return interaction.reply({
-      content: '큐가 비어있습니다.', flags: MessageFlags.Ephemeral });
+      content: '❌ 대기열이 비어있습니다.',
+      flags: MessageFlags.Ephemeral,
+    });
   }
 
   if (state.currentItem && !state.playStartTs) {
     return interaction.reply({
-      content: '현재 곡을 불러오는 중입니다. 로딩이 끝난 후 다시 시도해주세요.',
-      flags: MessageFlags.Ephemeral
+      content: '⏳ 현재 곡을 불러오는 중입니다. 로딩이 끝난 후 다시 시도해주세요.',
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -38,8 +40,8 @@ async function execute(interaction) {
     targetIndex = indexOpt - 1;
     if (targetIndex < 0 || targetIndex >= state.queue.length) {
       return interaction.reply({
-        content: `INDEX가 범위를 벗어났습니다. (1~${state.queue.length})`,
-        ephemeral: true,
+        content: `❌ INDEX가 범위를 벗어났습니다. (1~${state.queue.length})`,
+        flags: MessageFlags.Ephemeral,
       });
     }
   }
@@ -52,11 +54,15 @@ async function execute(interaction) {
     state.player.stop();
   }
 
-  await interaction.reply(`음악 재생을 시작합니다.`);
+  await interaction.reply({
+    embeds: [new EmbedBuilder()
+      .setColor(0x30D158)
+      .setDescription(`▶️ **${item.title}** 재생을 시작합니다.`)],
+  });
   try {
     await playItem(state, item);
   } catch (err) {
-    await interaction.followUp(`${item.title} 재생 오류: ${err.message}`);
+    await interaction.followUp(`❌ ${item.title} 재생 오류: ${err.message}`);
   }
 }
 

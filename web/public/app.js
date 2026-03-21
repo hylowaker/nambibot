@@ -259,9 +259,15 @@ function renderState(state) {
     if (!state.playStartTs) {
       // Loading: downloading audio before playback
       stopProgressTimer();
-      playProgressFill.style.width = '0%';
-      playProgressCur.textContent  = '준비 중...';
-      playProgressDur.textContent  = '';
+      playProgressFill.classList.remove('indeterminate');
+      playProgressDur.textContent = '';
+      if (state.downloadProgress != null) {
+        playProgressFill.style.width = state.downloadProgress + '%';
+        playProgressCur.textContent  = `다운로드 중... ${state.downloadProgress}%`;
+      } else {
+        playProgressFill.style.width = '0%';
+        playProgressCur.textContent  = '준비 중...';
+      }
     } else if (isPaused) {
       pausedElapsed = (Date.now() - state.playStartTs) / 1000;
       stopProgressTimer();

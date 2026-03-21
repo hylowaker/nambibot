@@ -270,12 +270,18 @@ Discord 채팅창에서 `/` 입력 후 명령어를 사용합니다.
 | `/music join` | `[채널명]` | 음성 채널 참가. 파라미터 없으면 명령 실행자의 채널 참가 |
 | `/music queue` | `URL` (필수) | 대기열 마지막에 추가. 재생목록 URL 지원 |
 | `/music play` | `[인덱스]` | 대기열에서 즉시 재생. 인덱스 없으면 첫 번째 항목 |
-| `/music skip` | — | 현재 곡 스킵 후 다음 곡 재생 |
 | `/music stop` | — | 현재 재생 중지 |
+| `/music skip` | — | 현재 곡 스킵 후 다음 곡 재생 (스킵된 곡은 대기열 맨 뒤로) |
+| `/music pause` | — | 현재 재생 일시정지 |
+| `/music resume` | — | 일시정지된 재생 재개 |
 | `/music delete` | `[인덱스]` | 대기열 항목 삭제. 인덱스 없으면 마지막 항목 삭제 |
 | `/music purge` | — | 대기열 전체 삭제 (현재 재생 중인 곡은 유지) |
+| `/music shuffle` | — | 대기열 항목 무작위로 섞기 |
+| `/music dedupe` | — | 대기열 중복 항목 제거 (먼저 등장한 항목 유지) |
+| `/music move` | `from` `to` (필수) | 대기열 항목 순서 변경. 예: `/music move 3 1` |
 | `/music show` | — | 현재 재생 중인 곡과 대기열 목록 출력 |
 | `/music leave` | — | 음성 채널 퇴장 (현재 곡은 대기열 맨 앞으로 복원) |
+| `/music webui` | — | Web UI 주소 표시 (본인에게만 보임) |
 
 ### `/version`
 
@@ -311,6 +317,7 @@ Discord 채팅창에서 `/` 입력 후 명령어를 사용합니다.
 | 변수 | 기본값 | 설명 |
 |------|--------|------|
 | `WEB_PORT` | `3000` | Web UI 포트 |
+| `WEB_UI_URL` | `http://localhost:{WEB_PORT}` | Discord `/music webui`로 표시되는 Web UI 주소. 역방향 프록시 등으로 외부에 노출할 경우 실제 URL 입력 |
 | `WEB_PASSWORD` | (없음) | Web UI 비밀번호. 비워두면 인증 없이 접근 가능 |
 | `NAMBI_DIR` | `~/.nambi` | 대기열·로그 등 데이터 저장 경로 |
 | `YT_DLP_BIN` | (PATH 탐색) | yt-dlp 실행 파일 경로 |
