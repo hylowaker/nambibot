@@ -1,5 +1,5 @@
-require('./web/logInterceptor'); // console 패치 — 가장 먼저 로드
-const { Client, Events, GatewayIntentBits, MessageFlags, EmbedBuilder } = require('discord.js');
+require('./web/logInterceptor');
+const { Client, Events, GatewayIntentBits, MessageFlags, EmbedBuilder, ActivityType } = require('discord.js');
 const { AudioPlayerStatus } = require('@discordjs/voice');
 require('dotenv').config();
 const fs   = require('fs');
@@ -13,25 +13,24 @@ const CMD_MUSIC   = `${devPrefix}music`;
 const CMD_VERSION = `${devPrefix}version`;
 const CMD_LOGS    = `${devPrefix}logs`;
 
-// Music subcommand handlers
 const musicHandlers = {
-  help:   require('./handler/music/help'),
-  join:   require('./handler/music/join'),
-  queue:  require('./handler/music/queue'),
-  show:   require('./handler/music/show'),
-  delete: require('./handler/music/delete'),
-  purge:  require('./handler/music/purge'),
-  jump:   require('./handler/music/jump'),
-  np:     require('./handler/music/np'),
-  stop:   require('./handler/music/stop'),
-  skip:   require('./handler/music/skip'),
-  leave:  require('./handler/music/leave'),
-  webui:  require('./handler/music/webui'),
-  pause:  require('./handler/music/pause'),
-  resume: require('./handler/music/resume'),
-  shuffle: require('./handler/music/shuffle'),
-  dedupe: require('./handler/music/dedupe'),
-  move:   require('./handler/music/move'),
+  help:     require('./handler/music/help'),
+  join:     require('./handler/music/join'),
+  add:      require('./handler/music/queue'),
+  list:     require('./handler/music/show'),
+  qdel:     require('./handler/music/delete'),
+  qclear:   require('./handler/music/purge'),
+  jump:     require('./handler/music/jump'),
+  np:       require('./handler/music/np'),
+  remove:   require('./handler/music/stop'),
+  skip:     require('./handler/music/skip'),
+  leave:    require('./handler/music/leave'),
+  webui:    require('./handler/music/webui'),
+  pause:    require('./handler/music/pause'),
+  resume:   require('./handler/music/resume'),
+  qshuffle: require('./handler/music/shuffle'),
+  qdedupe:  require('./handler/music/dedupe'),
+  qmove:    require('./handler/music/move'),
 };
 
 const { joinToChannel } = require('./voice');
@@ -44,7 +43,6 @@ const webServer = require('./web/server');
 
 console.log(`[boot] Node.js ${process.version}  PID=${process.pid}  platform=${process.platform}`);
 
-// PID=1이면 컨테이너(Docker exec) 환경으로 판단 — NAMBI_DOCKER=1 환경변수로도 명시 가능
 const isDockerMode = process.env.NAMBI_DOCKER === '1' || process.pid === 1;
 
 console.log(`[boot] 환경: ${process.env.NODE_ENV || 'production'}${isDockerMode ? '  Docker모드' : ''}${devPrefix ? '  개발 프리픽스: "dev-"' : ''}`);
@@ -68,7 +66,6 @@ client.once(Events.ClientReady, async () => {
 
   webServer.start(client);
 
-  // 저장된 대기열 및 음성 채널 복원
   const saved = persistence.loadState();
   const savedEntries = Object.entries(saved);
   if (savedEntries.length === 0) {
@@ -108,8 +105,12 @@ client.once(Events.ClientReady, async () => {
     })
   );
 
-  // 이후 상태 변경마다 실시간 저장
   persistence.init(stateBus, getAllStates);
+
+  stateBus.on('stateChanged', schedulePresenceUpdate);
+  stateBus.on('presenceUpdate', schedulePresenceUpdate);
+  updatePresence();
+
   console.log('[boot] 초기화 완료');
 });
 
@@ -117,10 +118,9 @@ async function handleMusicButton(interaction) {
   const parts   = interaction.customId.split(':');
   const action  = parts[1];
   const guildId = parts[2];
-  const extra   = parts[3]; // page number for show_pg
+  const extra   = parts[3];
 
   try {
-    // --- 페이지네이션 ---
     if (action === 'show_pg') {
       const page  = parseInt(extra, 10);
       const state = getState(guildId);
@@ -130,12 +130,13 @@ async function handleMusicButton(interaction) {
       return interaction.update({ embeds: [embed], components });
     }
 
-    // --- 대기열 초기화 확인 ---
     if (action === 'purge_ok') {
       const state = getState(guildId);
       const count = state.queue.length;
       state.queue = [];
       stateBus.emit('stateChanged', guildId);
+      stateBus.emit('notice', guildId, `🎧 ${interaction.user.username} · 대기열 전체 삭제 (${count}곡)`);
+      stateBus.emit('uiAction', guildId, 'purge');
       return interaction.update({
         embeds: [new EmbedBuilder().setColor(0xFF375F).setDescription(`🧹 대기열 **${count}개** 항목을 모두 삭제했습니다.`)],
         components: [],
@@ -145,7 +146,6 @@ async function handleMusicButton(interaction) {
       return interaction.update({ embeds: [], content: '취소했습니다.', components: [] });
     }
 
-    // --- 재생 제어 ---
     const state = getState(guildId);
     if (!state.connection) {
       return interaction.reply({ content: '❌ 봇이 음성 채널에 참가 중이지 않습니다.', flags: MessageFlags.Ephemeral });
@@ -176,11 +176,12 @@ async function handleMusicButton(interaction) {
       if (!state.currentItem) {
         return interaction.reply({ content: '❌ 재생 중인 항목이 없습니다.', flags: MessageFlags.Ephemeral });
       }
+      const title = state.currentItem?.title ?? '알 수 없음';
       state._stopRequested = true;
       state.player.stop();
       state.currentItem = null;
       return interaction.reply({
-        embeds: [new EmbedBuilder().setColor(0xFF375F).setDescription('⏹️ 재생을 중단했습니다.')],
+        embeds: [new EmbedBuilder().setColor(0xFF375F).setDescription(`🗑️ **${title}** 을(를) 삭제했습니다.`)],
         flags: MessageFlags.Ephemeral,
       });
     }
@@ -267,7 +268,7 @@ client.on(Events.Error, (error) => {
 });
 
 process.on('uncaughtException', (error) => {
-  if (error.code === 'EPIPE') return; // stdout/stderr 파이프 종료 — 무시
+  if (error.code === 'EPIPE') return;
   console.error('[process] 처리되지 않은 예외:', error);
 });
 
@@ -287,6 +288,10 @@ process.on('unhandledRejection', (reason) => {
 
 async function shutdown(signal) {
   console.log(`[process] 종료 신호 수신: ${signal}`);
+  if (client.user) {
+    client.user.setPresence({ status: 'invisible', activities: [] });
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
   const states = [...getAllStates()];
   console.log(`[process] ${states.length}개 길드 상태 정리 중...`);
   for (const state of states) {
@@ -299,8 +304,6 @@ async function shutdown(signal) {
   process.exit(0);
 }
 
-// Docker 환경에서는 SIGINT 무시 (docker stop → SIGTERM으로만 종료)
-// 로컬 개발 환경에서는 Ctrl+C(SIGINT)도 정상 종료
 if (isDockerMode) {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => {});
@@ -309,5 +312,95 @@ if (isDockerMode) {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
-console.log('[boot] Discord 로그인 중...');
-client.login(process.env.DISCORD_TOKEN);
+async function checkYtdlpEjs() {
+  const ok = await ytdlp.checkEjs();
+  if (!ok) {
+    console.warn(`[yt-dlp] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    console.warn(`[yt-dlp] ⚠  yt-dlp-ejs 패키지가 설치되어 있지 않습니다.`);
+    console.warn(`[yt-dlp]    YouTube 영상의 JS 서명 처리를 담당하며,`);
+    console.warn(`[yt-dlp]    미설치 시 일부 YouTube 영상 재생이 실패할 수 있습니다.`);
+    console.warn(`[yt-dlp]    설치 명령: pip3 install yt-dlp-ejs`);
+    console.warn(`[yt-dlp] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  }
+}
+
+async function checkYtdlpVersion() {
+  const [current, latest] = await Promise.all([
+    ytdlp.getVersion(),
+    ytdlp.getLatestNightlyTag(),
+  ]);
+
+  if (!current || current === '(unknown)') {
+    console.warn('[yt-dlp] ⚠ yt-dlp 바이너리를 찾을 수 없습니다. 음악 재생이 불가합니다.');
+    return;
+  }
+
+  console.log(`[yt-dlp] 설치된 버전: ${current}`);
+
+  if (!latest) {
+    console.warn('[yt-dlp] 최신 nightly 버전 확인 실패 (GitHub API 접근 불가) — 건너뜁니다.');
+    return;
+  }
+
+  if (current.trim() === latest.trim()) {
+    console.log(`[yt-dlp] ✓ 최신 nightly 버전입니다. (${current})`);
+  } else {
+    console.warn(`[yt-dlp] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    console.warn(`[yt-dlp] ⚠  yt-dlp 업데이트가 필요합니다.`);
+    console.warn(`[yt-dlp]    현재 버전  : ${current}`);
+    console.warn(`[yt-dlp]    최신 nightly: ${latest}`);
+    console.warn(`[yt-dlp]    오래된 버전은 일부 사이트에서 다운로드 오류를 유발할 수 있습니다.`);
+    console.warn(`[yt-dlp]    업데이트 명령: yt-dlp -U --update-to nightly`);
+    console.warn(`[yt-dlp] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  }
+}
+
+let _presenceTimer = null;
+
+function schedulePresenceUpdate() {
+  if (_presenceTimer) clearTimeout(_presenceTimer);
+  _presenceTimer = setTimeout(updatePresence, 800);
+}
+
+setInterval(updatePresence, 10000);
+
+function updatePresence() {
+  if (!client.user) return;
+
+  const states = [...getAllStates()];
+
+  let active = states.find(s => s.currentItem && s.player.state.status === AudioPlayerStatus.Playing);
+  if (!active) active = states.find(s => s.currentItem && s.player.state.status === AudioPlayerStatus.Paused);
+  if (!active) active = states.find(s => s.currentItem && s.player.state.status === AudioPlayerStatus.Buffering);
+  if (!active) active = states.find(s => s.currentItem && s.playStartTs);
+  if (!active) active = states.find(s => s.currentItem);
+
+  if (active?.currentItem) {
+    const playerStatus = active.player.state.status;
+    const isPaused  = playerStatus === AudioPlayerStatus.Paused;
+    const isLoading = !active.playStartTs || playerStatus === AudioPlayerStatus.Buffering;
+    const prefix = isLoading ? '⏳ 로딩 중 · ' : isPaused ? '⏸️ 일시정지 · ' : '▶️ 재생 중 · ';
+    const maxTitle = 128 - prefix.length;
+    const title = active.currentItem.title.length > maxTitle
+      ? active.currentItem.title.slice(0, maxTitle - 3) + '...'
+      : active.currentItem.title;
+    client.user.setPresence({
+      activities: [{ name: prefix + title, type: ActivityType.Listening }],
+      status: isPaused ? 'idle' : 'online',
+    });
+  } else {
+    client.user.setPresence({
+      activities: [{ name: '💤 재생 중인 항목 없음', type: ActivityType.Custom }],
+      status: 'online',
+    });
+  }
+}
+
+(async () => {
+  await Promise.all([
+    checkYtdlpVersion().catch(() => {}),
+    checkYtdlpEjs().catch(() => {}),
+  ]);
+  console.log('[boot] Discord 로그인 중...');
+  client.login(process.env.DISCORD_TOKEN);
+})();

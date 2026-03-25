@@ -3,9 +3,9 @@ const fs   = require('fs');
 const path = require('path');
 const os   = require('os');
 
-const MAX_ENTRIES    = 500;   // 메모리 버퍼 최대 항목 수
-const MAX_FILE_LINES = 2000;  // 파일 최대 줄 수
-const TRIM_TO_LINES  = 1500;  // 초과 시 이 줄 수로 트림
+const MAX_ENTRIES    = 1000;
+const MAX_FILE_LINES = 2000;
+const TRIM_TO_LINES  = 1500;
 
 const NAMBI_DIR = process.env.NAMBI_DIR || path.join(os.homedir(), '.nambi');
 const LOG_FILE  = path.join(NAMBI_DIR, 'logs.jsonl');
@@ -14,7 +14,6 @@ const buffer = [];
 const logBus = new EventEmitter();
 let fileLineCount = 0;
 
-// ── 시작 시 파일에서 복원 ─────────────────────────────────
 try { fs.mkdirSync(NAMBI_DIR, { recursive: true }); } catch {}
 
 try {

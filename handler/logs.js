@@ -4,9 +4,9 @@ const { getLogs } = require('../web/logBus');
 const RESET = '\x1b[0m';
 const DIM   = '\x1b[2m';
 const LEVEL_COLOR = {
-  info:  '\x1b[36m',  // cyan
-  warn:  '\x1b[33m',  // yellow
-  error: '\x1b[31m',  // red
+  info:  '\x1b[36m',
+  warn:  '\x1b[33m',
+  error: '\x1b[31m',
 };
 const LEVEL_EMBED_COLOR = {
   all:   0x6080FF,
@@ -20,7 +20,7 @@ function stripAnsi(s) {
 }
 
 function fmtTs(ms) {
-  return new Date(ms).toTimeString().slice(0, 8); // HH:MM:SS
+  return new Date(ms).toTimeString().slice(0, 8);
 }
 
 async function execute(interaction) {

@@ -1,7 +1,8 @@
-const socket = io();
+const socket = io({ transports: ['polling'], upgrade: false, reconnectionAttempts: Infinity, reconnectionDelay: 1000 });
+socket.on('connect_error', () => {});
 let currentGuildId = null;
+let _playbackGuildId = null;
 
-// --- DOM refs ---
 const botAvatar         = document.getElementById('bot-avatar');
 const botAvatarFallback = document.getElementById('bot-avatar-fallback');
 const botName           = document.getElementById('bot-name');
@@ -12,6 +13,7 @@ const connBadge         = document.getElementById('conn-badge');
 const nowPlayingTitle   = document.getElementById('now-playing-title');
 const nowPlayingSub     = document.getElementById('now-playing-sub');
 const playProgress      = document.getElementById('play-progress');
+const playProgressTrack = document.querySelector('.play-progress-bar-track');
 const playProgressFill  = document.getElementById('play-progress-fill');
 const playProgressCur   = document.getElementById('play-progress-current');
 const playProgressDur   = document.getElementById('play-progress-duration');
@@ -44,7 +46,6 @@ const btnLoadPlaylist   = document.getElementById('btn-load-playlist');
 
 let isQueueProcessing = false;
 
-// --- Offline overlay ---
 const offlineOverlay  = document.getElementById('offline-overlay');
 const offlineAttempts = document.getElementById('offline-attempts');
 const MAX_RECONNECT_SHOW = 5;
@@ -60,7 +61,14 @@ function hideOfflineOverlay() {
   offlineOverlay.classList.remove('visible');
 }
 
-// --- Socket connection status ---
+const _npCard = document.getElementById('card-now-playing');
+document.querySelectorAll('.col-main > .card, .col-side > .card, #fab-listen').forEach((el, i) => {
+  const delay = 0.06 + i * 0.06;
+  el.style.opacity = '0';
+  el.style.animation = `pageEnter 0.5s ease ${delay}s both`;
+  el.addEventListener('animationend', () => { el.style.animation = ''; el.style.opacity = ''; }, { once: true });
+});
+
 socket.on('connect', () => {
   connBadge.textContent = '연결됨';
   connBadge.className = 'ok';
@@ -69,12 +77,25 @@ socket.on('connect', () => {
   socket.emit('cmd:listGuilds');
   if (currentGuildId) {
     socket.emit('subscribe', { guildId: currentGuildId });
+  } else if (_playbackGuildId) {
+    socket.emit('subscribe', { guildId: _playbackGuildId });
   }
 });
 socket.on('disconnect', () => {
   connBadge.textContent = '오프라인';
   connBadge.className = 'err';
   setUiDisabled(true);
+  destroyWebAudio();
+  webListenTrackUrl = null;
+  _webLastPlayStartTs = null;
+  stopProgressTimer();
+  cdIcon.className = 'cd paused';
+  btnPause.style.display = 'none';
+  btnResume.style.display = '';
+  const npCard = document.getElementById('card-now-playing');
+  npCard.classList.remove('np-playing');
+  npCard.classList.add('np-paused');
+  document.title = '오프라인 · nambibot';
 });
 socket.on('reconnect_attempt', (attempt) => {
   connBadge.textContent = `재연결 중...`;
@@ -84,24 +105,29 @@ socket.on('reconnect_attempt', (attempt) => {
   }
 });
 
-// --- Bot profile ---
 socket.on('botProfile', ({ username, avatar }) => {
   botName.textContent = username;
   if (avatar) {
     botAvatar.src = avatar;
     botAvatar.style.display = '';
     botAvatarFallback.style.display = 'none';
+    setCircleFavicon(avatar);
   }
 });
 
-// --- Guild list ---
+socket.on('buildInfo', ({ version, build }) => {
+  const footer = document.getElementById('page-footer');
+  if (footer) {
+    footer.textContent = `nambibot v${version}${build ? '  ·  ' + build : ''}`;
+  }
+});
+
 let guildMap = {};
 
 socket.on('guilds', (guilds) => {
   guildMap = {};
   guilds.forEach(g => { guildMap[g.id] = g; });
 
-  const prev = guildSelect.value;
   guildSelect.innerHTML = '<option value="">서버 선택...</option>';
   guilds.forEach(g => {
     const opt = document.createElement('option');
@@ -110,12 +136,35 @@ socket.on('guilds', (guilds) => {
     guildSelect.appendChild(opt);
   });
 
-  if (prev && [...guildSelect.options].some(o => o.value === prev)) {
-    guildSelect.value = prev;
-  } else if (guilds.length === 1) {
-    guildSelect.value = guilds[0].id;
-    guildSelect.dispatchEvent(new Event('change'));
-    return;
+  const validIds = new Set(guilds.map(g => g.id));
+
+  const saved = localStorage.getItem('nambibot_guild');
+  const wasCleared = saved === 'none';
+  let targetId = null;
+  if (currentGuildId && validIds.has(currentGuildId)) {
+    targetId = currentGuildId;
+  } else if (!wasCleared) {
+    if (saved && validIds.has(saved)) {
+      targetId = saved;
+    } else {
+      const connected = guilds.find(g => g.connected);
+      if (connected) targetId = connected.id;
+      else if (guilds.length === 1) targetId = guilds[0].id;
+    }
+  }
+
+  if (targetId) {
+    guildSelect.value = targetId;
+    if (targetId !== currentGuildId) {
+      guildSelect.dispatchEvent(new Event('change'));
+      return;
+    }
+  } else if (wasCleared) {
+    const pbGuild = localStorage.getItem('nambibot_guild_playback');
+    if (pbGuild && validIds.has(pbGuild)) {
+      _playbackGuildId = pbGuild;
+      socket.emit('subscribe', { guildId: pbGuild });
+    }
   }
   updateGuildIcon(guildSelect.value);
 });
@@ -132,15 +181,23 @@ function updateGuildIcon(guildId) {
 
 guildSelect.addEventListener('change', () => {
   const guildId = guildSelect.value;
+  const prevGuildId = currentGuildId;
   if (!guildId) {
     currentGuildId = null;
+    localStorage.setItem('nambibot_guild', 'none');
     updateGuildIcon(null);
     voiceCard.classList.add('card--inactive');
     return;
   }
   currentGuildId = guildId;
+  _playbackGuildId = guildId;
+  localStorage.setItem('nambibot_guild', guildId);
+  localStorage.setItem('nambibot_guild_playback', guildId);
   updateGuildIcon(guildId);
   voiceCard.classList.remove('card--inactive');
+  if (prevGuildId && prevGuildId !== guildId) {
+    socket.emit('cmd:migrateState', { fromGuildId: prevGuildId, toGuildId: guildId });
+  }
   socket.emit('subscribe', { guildId });
   socket.emit('cmd:listChannels', { guildId });
 });
@@ -177,19 +234,22 @@ socket.on('channels', (channels) => {
   renderChannelOptions();
 });
 
-// --- State update ---
-socket.on('state', (state) => {
-  if (state.guildId !== currentGuildId) return;
+socket.on('state', async (raw) => {
+  const state = await decryptPayload(raw);
+  if (!state) return;
+  const isActive = state.guildId === currentGuildId
+    || (!currentGuildId && state.guildId === _playbackGuildId);
+  if (!isActive) return;
   renderState(state);
-  if (!isQueueProcessing) resetQueueBtn();
+  if (!isQueueProcessing) { resetQueueBtn(); updateQueueBtnState(); }
 });
 
-// --- Progress bar ---
 let progressTimer = null;
 let currentPlayStartTs = null;
 let currentDuration = null;
 let currentIsPaused = false;
 let pausedElapsed = 0;
+let currentPausedDuration = 0;
 
 function startProgressTimer() {
   if (progressTimer) clearInterval(progressTimer);
@@ -201,23 +261,67 @@ function stopProgressTimer() {
   if (progressTimer) { clearInterval(progressTimer); progressTimer = null; }
 }
 
+const seekTooltip = document.getElementById('seek-tooltip');
+let _lastMoveTs = 0;
+
+playProgressTrack.addEventListener('mousemove', (e) => {
+  if (Date.now() - _lastMoveTs < 50) return;
+  _lastMoveTs = Date.now();
+  if (!playProgressTrack.classList.contains('seekable')) return;
+  if (!currentDuration || currentDuration <= 0) return;
+  const rect = playProgressTrack.getBoundingClientRect();
+  const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  const hoverSec = pct * currentDuration;
+  seekTooltip.textContent = fmtTime(hoverSec);
+  seekTooltip.style.left = (pct * 100) + '%';
+  seekTooltip.style.display = '';
+});
+
+playProgressTrack.addEventListener('mouseleave', () => {
+  seekTooltip.style.display = 'none';
+});
+
+playProgressTrack.addEventListener('click', (e) => {
+  if (!playProgressTrack.classList.contains('seekable')) return;
+  if (!currentDuration || currentDuration <= 0) return;
+  const rect = playProgressTrack.getBoundingClientRect();
+  const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  const seekSec = pct * currentDuration;
+  const gid = currentGuildId || _playbackGuildId;
+  if (!gid) return;
+  playProgressFill.style.transition = 'none';
+  playProgressFill.style.width = (pct * 100) + '%';
+  playProgressCur.textContent = fmtTime(seekSec);
+  requestAnimationFrame(() => { playProgressFill.style.transition = ''; });
+  socket.emit('cmd:seek', { guildId: gid, seconds: seekSec });
+});
+
 function updateProgressBar() {
   if (!currentPlayStartTs) return;
   const elapsed = currentIsPaused
     ? pausedElapsed
-    : (Date.now() - currentPlayStartTs) / 1000;
+    : (Date.now() - currentPlayStartTs - currentPausedDuration) / 1000;
   const dur = currentDuration;
 
-  playProgressCur.textContent = fmtTime(elapsed);
+  const curText = fmtTime(elapsed);
+  if (_prevProgressText !== curText) {
+    _prevProgressText = curText;
+    playProgressCur.textContent = curText;
+  }
 
   if (dur && dur > 0) {
     const pct = Math.min((elapsed / dur) * 100, 100);
-    playProgressFill.style.width = pct + '%';
+    const widthVal = pct + '%';
+    if (_prevProgressWidth !== widthVal) {
+      _prevProgressWidth = widthVal;
+      playProgressFill.style.width = widthVal;
+    }
     playProgressFill.classList.remove('indeterminate');
     playProgressDur.textContent = fmtTime(dur);
   } else {
     playProgressFill.classList.add('indeterminate');
     playProgressFill.style.width = '35%';
+    _prevProgressWidth = '35%';
     playProgressDur.textContent = '';
   }
 }
@@ -231,20 +335,43 @@ function fmtTime(secs) {
   return `${m}:${String(s).padStart(2,'0')}`;
 }
 
+let _prevTrackUrl = undefined;
+let _prevProgressText = '';
+let _prevProgressWidth = '';
+let _prevNpUrl = undefined;
+
 function renderState(state) {
   const isPaused  = state.playerStatus === 'paused';
   const isPlaying = !!state.currentItem;
-  isLoading = isPlaying && !state.playStartTs; // 다운로드 중 (재생 미시작) — 모듈 변수 갱신
 
-  // Now playing title + sub
+  const curUrl = state.currentItem?.url ?? null;
+  isLoading = isPlaying && !state.playStartTs;
+  if (_prevTrackUrl !== undefined && curUrl && curUrl !== _prevTrackUrl && !isLoading) {
+    const npBody = document.querySelector('.now-playing-body');
+    npBody.classList.remove('np-transition');
+    void npBody.offsetWidth;
+    npBody.classList.add('np-transition');
+  }
+  if (!isLoading) _prevTrackUrl = curUrl;
+
   if (state.currentItem) {
-    nowPlayingTitle.innerHTML = `
-      <div class="track-title">${escHtml(state.currentItem.title)}</div>
-      <a class="track-url" href="${escHtml(state.currentItem.url)}" target="_blank" rel="noopener">${escHtml(state.currentItem.url)}</a>
-    `;
+    if (_prevNpUrl !== state.currentItem.url) {
+      _prevNpUrl = state.currentItem.url;
+      nowPlayingTitle.innerHTML = `
+        <div class="track-title">${escHtml(state.currentItem.title)}</div>
+        <a class="track-url" href="${escHtml(state.currentItem.url)}" target="_blank" rel="noopener">${escHtml(state.currentItem.url)}</a>
+      `;
+    }
     nowPlayingTitle.classList.remove('idle');
 
-    // Uploader/channel
+    const cdLabel = document.querySelector('.cd-label');
+    const thumb = state.currentItem.thumbnail;
+    if (thumb) {
+      cdLabel.innerHTML = `<img class="cd-label-img" src="${escHtml(thumb)}" alt="">`;
+    } else {
+      cdLabel.innerHTML = '';
+    }
+
     if (state.currentItem.uploader) {
       nowPlayingSub.textContent = '🎤 ' + state.currentItem.uploader;
       nowPlayingSub.style.display = '';
@@ -252,14 +379,15 @@ function renderState(state) {
       nowPlayingSub.style.display = 'none';
     }
 
-    // Progress bar
-    currentPlayStartTs = state.playStartTs;
-    currentDuration    = state.currentItem.duration ?? null;
-    currentIsPaused    = isPaused;
+    currentPlayStartTs    = state.playStartTs;
+    currentDuration       = state.currentItem.duration ?? null;
+    currentIsPaused       = isPaused;
+    currentPausedDuration = state.pausedDuration ?? 0;
     if (!state.playStartTs) {
-      // Loading: downloading audio before playback
       stopProgressTimer();
-      playProgressFill.classList.remove('indeterminate');
+      playProgressFill.classList.remove('indeterminate', 'playing', 'paused');
+      playProgressFill.classList.add('downloading');
+      playProgressTrack.classList.add('downloading');
       playProgressDur.textContent = '';
       if (state.downloadProgress != null) {
         playProgressFill.style.width = state.downloadProgress + '%';
@@ -269,27 +397,50 @@ function renderState(state) {
         playProgressCur.textContent  = '준비 중...';
       }
     } else if (isPaused) {
-      pausedElapsed = (Date.now() - state.playStartTs) / 1000;
+      pausedElapsed = (state.elapsedAtPauseMs ?? 0) / 1000;
+      playProgressFill.classList.remove('downloading', 'playing', 'indeterminate');
+      playProgressFill.classList.add('paused');
+      playProgressTrack.classList.remove('downloading');
       stopProgressTimer();
     } else {
+      playProgressFill.classList.remove('downloading', 'paused', 'indeterminate');
+      playProgressFill.classList.add('playing');
+      playProgressTrack.classList.remove('downloading');
       startProgressTimer();
     }
     playProgress.style.display = '';
+    playProgressTrack.classList.toggle('seekable', !!state.playStartTs && !!currentDuration);
 
   } else {
+    _prevNpUrl = undefined;
     nowPlayingTitle.innerHTML = '재생 중인 항목 없음';
     nowPlayingTitle.classList.add('idle');
     nowPlayingSub.style.display = 'none';
+    document.querySelector('.cd-label').innerHTML = '';
     playProgress.style.display = 'none';
+    playProgressFill.classList.remove('downloading', 'playing', 'paused');
+    playProgressTrack.classList.remove('downloading');
     stopProgressTimer();
     currentPlayStartTs = null;
     currentDuration = null;
   }
 
-  // CD icon
-  cdIcon.className = 'cd ' + (isPlaying ? (isPaused ? 'paused' : 'playing') : 'idle');
+  cdIcon.className = 'cd ' + (isPlaying ? (isLoading ? 'idle' : isPaused ? 'paused' : 'playing') : 'idle');
 
-  // Pause / Resume button toggle (로딩 중 비활성화)
+  const npCard = document.getElementById('card-now-playing');
+  npCard.classList.toggle('np-playing', isPlaying && !isPaused && !isLoading);
+  npCard.classList.toggle('np-paused', isPlaying && isPaused);
+
+  const showListenHint = isPlaying && !state.connected && !webListenActive;
+  if (showListenHint) {
+    nowPlayingHint.innerHTML = '음성 채널 연결 없이도 <button class="hint-fab-btn" id="hint-fab-trigger">🔊</button> 버튼으로 브라우저에서 바로 들을 수 있어요';
+    nowPlayingHint.style.display = '';
+    const hintBtn = document.getElementById('hint-fab-trigger');
+    if (hintBtn) hintBtn.addEventListener('click', () => { if (!webListenActive) startWebListen(); }, { once: true });
+  } else {
+    nowPlayingHint.style.display = 'none';
+  }
+
   btnPause.style.display  = (isPlaying && !isPaused) ? '' : 'none';
   btnResume.style.display = (isPlaying && isPaused)  ? '' : 'none';
   btnPause.disabled   = isLoading;
@@ -299,16 +450,14 @@ function renderState(state) {
   btnSkip.disabled        = isLoading;
   btnDeleteCurrent.disabled = isLoading;
 
-  // Queue
   isVoiceConnected   = state.connected;
   isCurrentlyPlaying = !!state.currentItem;
   currentQueue       = state.queue;
   renderQueue();
 
-  // History
   if (state.history) renderHistory(state.history);
 
-  // Voice section
+  const wasConnected = isVoiceConnected;
   if (state.connected) {
     pendingChannelName = null;
     currentConnectedChannel = state.connectedChannelName;
@@ -320,9 +469,24 @@ function renderState(state) {
     setChannelLock(true);
     guildSelect.disabled = true;
     guildLock.style.display = '';
+    if (!wasConnected) {
+      voiceConnectedBanner.classList.remove('voice-anim-join', 'voice-anim-leave');
+      void voiceConnectedBanner.offsetWidth;
+      voiceConnectedBanner.classList.add('voice-anim-join');
+    }
   } else if (!pendingChannelName) {
+    if (wasConnected) {
+      voiceConnectedBanner.classList.remove('voice-anim-join', 'voice-anim-leave');
+      void voiceConnectedBanner.offsetWidth;
+      voiceConnectedBanner.classList.add('voice-anim-leave');
+      setTimeout(() => {
+        voiceConnectedBanner.style.display = 'none';
+        voiceConnectedBanner.classList.remove('voice-anim-leave');
+      }, 350);
+    } else {
+      voiceConnectedBanner.style.display = 'none';
+    }
     currentConnectedChannel = null;
-    voiceConnectedBanner.style.display = 'none';
     voiceDiscMsg.style.display = '';
     setChannelLock(false);
     selectChannel.value = '';
@@ -330,9 +494,15 @@ function renderState(state) {
     guildLock.style.display = 'none';
   }
   renderChannelOptions();
+
+  if (state.currentItem) {
+    const prefix = isLoading ? '⏳ ' : isPaused ? '⏸️ ' : '▶️ ';
+    document.title = prefix + state.currentItem.title + ' · nambibot';
+  } else {
+    document.title = 'nambibot · Music';
+  }
 }
 
-// --- History ---
 function renderHistory(history) {
   if (!history || history.length === 0) {
     historyList.innerHTML = '<li class="history-empty">재생 기록이 없습니다.</li>';
@@ -341,6 +511,7 @@ function renderHistory(history) {
   }
   historyCount.textContent = `(${history.length})`;
   historyList.innerHTML = '';
+  const histFrag = document.createDocumentFragment();
   history.forEach((item, i) => {
     const li = document.createElement('li');
     li.className = 'history-item';
@@ -354,16 +525,18 @@ function renderHistory(history) {
       <span class="h-info">
         <span class="h-title" title="${escHtml(item.title)}">${escHtml(item.title)}</span>
         ${urlPart}
-        <span class="h-meta">${ago}${dur}${item.uploader ? ' · ' + escHtml(item.uploader) : ''}</span>
+        <span class="h-meta">${ago}${dur}</span>
       </span>
       <button class="btn-secondary btn-sm h-add-btn" title="대기열에 추가">↩</button>
     `;
     li.querySelector('.h-add-btn').addEventListener('click', () => {
-      if (!currentGuildId) return showToast('서버를 먼저 선택하세요.', 'error');
-      socket.emit('cmd:appendItems', { guildId: currentGuildId, items: [item] });
+      const gid = currentGuildId || _playbackGuildId;
+      if (!gid) return showToast('서버를 먼저 선택하세요.', 'error');
+      socket.emit('cmd:appendItems', { guildId: gid, items: [item] });
     });
-    historyList.appendChild(li);
+    histFrag.appendChild(li);
   });
+  historyList.appendChild(histFrag);
 }
 
 function fmtAgo(ts) {
@@ -374,7 +547,6 @@ function fmtAgo(ts) {
   return `${Math.floor(diff / 86400)}일 전`;
 }
 
-// --- Playlists (local file) ---
 btnSavePlaylist.addEventListener('click', () => {
   if (!currentQueue.length) return showToast('저장할 곡이 없습니다.', 'error');
   const data = { version: 1, savedAt: new Date().toISOString(), items: currentQueue };
@@ -403,8 +575,9 @@ btnLoadPlaylist.addEventListener('click', () => {
         if (!Array.isArray(items) || !items.length) throw new Error('유효한 대기열 파일이 아닙니다.');
         const valid = items.filter(it => it && it.title && it.url);
         if (!valid.length) throw new Error('유효한 항목이 없습니다.');
-        if (!currentGuildId) return showToast('서버를 먼저 선택하세요.', 'error');
-        socket.emit('cmd:appendItems', { guildId: currentGuildId, items: valid });
+        const gid = currentGuildId || _playbackGuildId;
+        if (!gid) return showToast('서버를 먼저 선택하세요.', 'error');
+        socket.emit('cmd:appendItems', { guildId: gid, items: valid });
       } catch (err) {
         showToast(err.message || '파일을 읽을 수 없습니다.', 'error');
       }
@@ -414,22 +587,58 @@ btnLoadPlaylist.addEventListener('click', () => {
   input.click();
 });
 
-// --- Queue list click delegation ---
 queueList.addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-action]');
-  if (!btn || !currentGuildId) return;
-  if (btn.dataset.action === 'play' && !isVoiceConnected) return;
+  const gid = currentGuildId || _playbackGuildId;
+  if (!btn || !gid) return;
   const action = btn.dataset.action;
   const index = parseInt(btn.dataset.index, 10);
-  if (action === 'play')   socket.emit('cmd:play',   { guildId: currentGuildId, index });
-  if (action === 'delete') socket.emit('cmd:delete', { guildId: currentGuildId, index });
+  if (action === 'play') {
+    triggerNpAnim('np-skip');
+    socket.emit('cmd:play', { guildId: gid, index });
+  }
+  if (action === 'delete') {
+    const li = btn.closest('.queue-item');
+    if (li) { li.classList.add('q-anim-delete'); }
+    socket.emit('cmd:delete', { guildId: gid, index });
+  }
 });
 
-// --- Controls ---
+const UI_ACTION_MAP = {
+  shuffle: 'q-anim-shuffle',
+  dedupe:  'q-anim-dedupe',
+  purge:   'q-anim-purge',
+};
+socket.on('uiAction', ({ action }) => {
+  const cls = UI_ACTION_MAP[action];
+  if (cls) triggerQueueAnim(cls);
+});
+
+function triggerQueueAnim(cls) {
+  queueList.classList.remove('q-anim-shuffle', 'q-anim-dedupe', 'q-anim-purge');
+  void queueList.offsetWidth;
+  queueList.classList.add(cls);
+  queueList.addEventListener('animationend', () => queueList.classList.remove(cls), { once: true });
+}
+
+function triggerNpAnim(cls) {
+  const npBody = document.querySelector('.now-playing-body');
+  npBody.classList.remove('np-skip', 'np-delete', 'np-transition');
+  void npBody.offsetWidth;
+  npBody.classList.add(cls);
+  npBody.addEventListener('animationend', () => npBody.classList.remove(cls), { once: true });
+}
+
 btnPause.addEventListener('click',         () => emit('cmd:pause'));
 btnResume.addEventListener('click',        () => emit('cmd:resume'));
-btnSkip.addEventListener('click',          () => emit('cmd:skip'));
-btnDeleteCurrent.addEventListener('click', () => emit('cmd:deleteCurrent'));
+btnSkip.addEventListener('click',          () => {
+  emit('cmd:skip'); queueList.scrollTop = 0;
+  triggerNpAnim('np-skip');
+});
+btnDeleteCurrent.addEventListener('click', () => {
+  emit('cmd:deleteCurrent');
+  triggerNpAnim('np-delete');
+});
 btnShuffle.addEventListener('click',       () => emit('cmd:shuffle'));
 btnDedupe.addEventListener('click',        () => emit('cmd:dedupe'));
 btnPurge.addEventListener('click',         () => emit('cmd:purge'));
@@ -439,7 +648,6 @@ btnLeave.addEventListener('click', () => {
   emit('cmd:leave');
 });
 
-// 채널 선택 → 연결 중 UI 표시 후 즉시 참가
 let pendingChannelName = null;
 
 function setChannelLock(locked) {
@@ -467,18 +675,34 @@ selectChannel.addEventListener('change', () => {
   emit('cmd:join', { channelName });
 });
 
-// --- Queue form ---
+const btnPlayNow = document.getElementById('btn-play-now');
+btnQueue.disabled = true;
+btnPlayNow.disabled = true;
+
 formQueue.addEventListener('submit', (e) => {
   e.preventDefault();
   const url = inputUrl.value.trim();
-  if (!url || !currentGuildId || isQueueProcessing) return;
+  const gid = currentGuildId || _playbackGuildId;
+  if (!url || !gid || isQueueProcessing) return;
   isQueueProcessing = true;
   setQueueInputLock(true);
-  socket.emit('cmd:queue', { guildId: currentGuildId, url });
+  socket.emit('cmd:queue', { guildId: gid, url });
+});
+
+let _playNowScrollTop = false;
+
+btnPlayNow.addEventListener('click', () => {
+  const url = inputUrl.value.trim();
+  const gid = currentGuildId || _playbackGuildId;
+  if (!url || !gid || isQueueProcessing) return;
+  isQueueProcessing = true;
+  _playNowScrollTop = true;
+  setQueueInputLock(true);
+  socket.emit('cmd:playNow', { guildId: gid, url });
 });
 
 socket.on('queueProgress', ({ guildId, status, current, total, count }) => {
-  if (guildId !== currentGuildId) return;
+  if (guildId !== currentGuildId && guildId !== _playbackGuildId) return;
 
   if (status === 'fetching' || status === 'downloading') {
     queueProgress.style.display = '';
@@ -506,18 +730,31 @@ socket.on('queueProgress', ({ guildId, status, current, total, count }) => {
   }
 });
 
+function updateQueueBtnState() {
+  const empty = !inputUrl.value.trim();
+  btnQueue.disabled = empty || isQueueProcessing;
+  btnPlayNow.disabled = empty || isQueueProcessing;
+}
+
 function setQueueInputLock(locked) {
   inputUrl.disabled = locked;
-  btnQueue.disabled = locked;
+  if (locked) {
+    btnQueue.disabled = true;
+    btnPlayNow.disabled = true;
+  }
 }
+
+inputUrl.addEventListener('input', updateQueueBtnState);
+inputUrl.addEventListener('change', updateQueueBtnState);
+inputUrl.addEventListener('paste', () => setTimeout(updateQueueBtnState, 0));
 
 function resetQueueBtn() {
   isQueueProcessing = false;
   setQueueInputLock(false);
-  btnQueue.textContent = '추가';
+  updateQueueBtnState();
+  btnQueue.textContent = '대기열 추가';
 }
 
-// --- Notice & Error toast ---
 socket.on('notice',   ({ message }) => showToast(message, 'notice'));
 socket.on('cmdError', ({ message }) => {
   showToast(message, 'error');
@@ -531,7 +768,6 @@ socket.on('cmdError', ({ message }) => {
   }
 });
 
-// --- Toast system ---
 const TOAST_ICONS = { error: '✕', notice: '✓', info: 'ℹ' };
 const TOAST_DUR = 3500;
 
@@ -546,7 +782,6 @@ function showToast(msg, type = 'error') {
   `;
   toastContainer.appendChild(el);
 
-  // Limit stacked toasts to 4
   const toasts = toastContainer.querySelectorAll('.toast-item');
   if (toasts.length > 4) toasts[0].remove();
 
@@ -556,7 +791,6 @@ function showToast(msg, type = 'error') {
   }, TOAST_DUR);
 }
 
-// --- Queue search ---
 inputSearch.addEventListener('input', renderQueue);
 
 const addQueueCard    = document.getElementById('card-add-queue');
@@ -567,7 +801,6 @@ const guildProfile  = document.querySelector('.guild-profile');
 const colMain       = document.querySelector('.col-main');
 const colSide       = document.querySelector('.col-side');
 
-// col-side max-height = col-main height (히스토리 카드가 대기열에 추가 card 아래로 넘어가지 않도록)
 new ResizeObserver(() => {
   colSide.style.maxHeight = colMain.offsetHeight + 'px';
 }).observe(colMain);
@@ -581,7 +814,8 @@ function renderQueue() {
   const isFiltering = q.length > 0;
 
   const hasItems = currentQueue.length > 0;
-  const itemsAdded = prevQueueLength >= 0 && currentQueue.length > prevQueueLength;
+  const oldLength = prevQueueLength;
+  const itemsAdded = oldLength >= 0 && currentQueue.length > oldLength;
   prevQueueLength = currentQueue.length;
   inputSearch.closest('.queue-search').style.display = hasItems ? '' : 'none';
   if (!hasItems) inputSearch.value = '';
@@ -592,27 +826,22 @@ function renderQueue() {
   btnLoadPlaylist.disabled = false;
   btnPurge.disabled = !hasItems;
 
-  nowPlayingHint.style.display = isVoiceConnected ? 'none' : '';
-  nowPlayingHint.textContent = isVoiceConnected ? '' : '🔊 서버와 음성 채널을 먼저 선택하여 참가해주세요';
-
   guildProfile.classList.toggle('guild-profile--cta', !currentGuildId);
   voiceCard.classList.toggle('card--inactive', !currentGuildId);
   voiceCard.classList.toggle('card--cta', !!currentGuildId && !isVoiceConnected);
 
-  if (!isVoiceConnected) {
-    addQueueCard.classList.remove('card--cta', 'card--inactive');
-    addQueueHint.style.display = 'none';
-  } else if (!hasItems && !isCurrentlyPlaying) {
+  if (!hasItems && !isCurrentlyPlaying) {
     addQueueCard.classList.remove('card--inactive');
     addQueueCard.classList.add('card--cta');
     addQueueHint.style.display = '';
     addQueueHint.className = 'add-queue-hint add-queue-hint--cta';
     addQueueHint.textContent = '⬇ URL을 입력하여 첫 번째 곡을 추가해보세요';
   } else if (!hasItems && isCurrentlyPlaying) {
-    addQueueCard.classList.remove('card--inactive', 'card--cta');
+    addQueueCard.classList.remove('card--inactive');
+    addQueueCard.classList.add('card--cta');
     addQueueHint.style.display = '';
-    addQueueHint.className = 'add-queue-hint add-queue-hint--secondary';
-    addQueueHint.textContent = '다음 곡 URL을 입력하여 대기열을 채워보세요';
+    addQueueHint.className = 'add-queue-hint add-queue-hint--cta';
+    addQueueHint.textContent = '⬇ 다음 곡 URL을 입력하여 대기열을 채워보세요';
   } else {
     addQueueCard.classList.remove('card--inactive', 'card--cta');
     addQueueHint.style.display = 'none';
@@ -639,75 +868,94 @@ function renderQueue() {
   }
 
   queueList.innerHTML = '';
+  const frag = document.createDocumentFragment();
   filtered.forEach(({ item, i }) => {
     const li = document.createElement('li');
     li.className = 'queue-item';
     li.draggable = !isFiltering;
     li.dataset.index = i;
     const durStr = item.duration ? `<span class="q-dur">${fmtTime(item.duration)}</span>` : '';
+    const uploaderStr = item.uploader ? `<span class="q-uploader">${escHtml(item.uploader)}</span>` : '';
+    const thumbSrc = item.thumbnail ? escHtml(item.thumbnail) : '';
+    const thumbHtml = `<div class="q-album">
+      <div class="q-album-case">${thumbSrc ? `<img src="${thumbSrc}" alt="" loading="lazy">` : '<span class="q-album-note">🎵</span>'}</div>
+      <div class="q-album-disc"><div class="q-disc-label">${thumbSrc ? `<img src="${thumbSrc}" alt="" loading="lazy">` : ''}</div><div class="q-disc-hole"></div></div>
+    </div>`;
     li.innerHTML = `
       <span class="drag-handle" title="드래그하여 순서 변경" ${isFiltering ? 'style="visibility:hidden"' : ''}>⠿</span>
       <span class="idx">${i + 1}</span>
+      ${thumbHtml}
       <span class="track-info">
         <span class="title" title="${escHtml(item.title)}">${highlight(item.title, q)}</span>
         <span class="track-meta">
           <a class="track-url" href="${escHtml(item.url)}" target="_blank" rel="noopener">${escHtml(item.url)}</a>
-          ${durStr}
+          ${durStr}${uploaderStr}
         </span>
       </span>
       <span class="actions">
-        <button class="btn-secondary btn-sm" data-action="play" data-index="${i + 1}" ${(!isVoiceConnected || isLoading) ? 'disabled' : ''}>▶</button>
+        <button class="btn-secondary btn-sm" data-action="play" data-index="${i + 1}" ${isLoading ? 'disabled' : ''}>▶</button>
         <button class="btn-danger btn-sm"    data-action="delete" data-index="${i + 1}">✕</button>
       </span>
     `;
-    queueList.appendChild(li);
+    if (itemsAdded && !isFiltering && i >= oldLength) {
+      li.classList.add('q-anim-add');
+      li.addEventListener('animationend', () => li.classList.remove('q-anim-add'), { once: true });
+    }
+    frag.appendChild(li);
   });
-  if (!isFiltering) initDragAndDrop();
-  if (itemsAdded && !isFiltering) queueList.scrollTop = queueList.scrollHeight;
+  queueList.appendChild(frag);
+  if (itemsAdded && !isFiltering) {
+    if (_playNowScrollTop) {
+      _playNowScrollTop = false;
+      queueList.scrollTop = 0;
+    } else {
+      setTimeout(() => { queueList.scrollTop = queueList.scrollHeight; }, 100);
+    }
+  }
 }
 
-// --- Drag and Drop ---
 let currentQueue       = [];
 let isVoiceConnected   = false;
 let isCurrentlyPlaying = false;
-let isLoading          = false; // 다운로드 중 (currentItem 있음 + playStartTs 없음)
+let isLoading          = false;
 let dragSrcIndex       = null;
 
-function initDragAndDrop() {
-  const items = queueList.querySelectorAll('li.queue-item');
-  items.forEach(li => {
-    li.addEventListener('dragstart', (e) => {
-      dragSrcIndex = parseInt(li.dataset.index, 10);
-      li.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move';
-    });
-    li.addEventListener('dragend', () => {
-      li.classList.remove('dragging');
-      items.forEach(i => i.classList.remove('drag-over'));
-    });
-    li.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      items.forEach(i => i.classList.remove('drag-over'));
-      li.classList.add('drag-over');
-    });
-    li.addEventListener('dragleave', () => {
-      li.classList.remove('drag-over');
-    });
-    li.addEventListener('drop', (e) => {
-      e.preventDefault();
-      li.classList.remove('drag-over');
-      const toIndex = parseInt(li.dataset.index, 10);
-      if (dragSrcIndex === null || dragSrcIndex === toIndex) return;
-      socket.emit('cmd:reorder', { guildId: currentGuildId, fromIndex: dragSrcIndex, toIndex });
-      dragSrcIndex = null;
-    });
-  });
-}
+queueList.addEventListener('dragstart', (e) => {
+  const li = e.target.closest('.queue-item');
+  if (!li) return;
+  dragSrcIndex = parseInt(li.dataset.index, 10);
+  li.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+});
+queueList.addEventListener('dragend', (e) => {
+  const li = e.target.closest('.queue-item');
+  if (li) li.classList.remove('dragging');
+  queueList.querySelectorAll('.queue-item.drag-over').forEach(el => el.classList.remove('drag-over'));
+});
+queueList.addEventListener('dragover', (e) => {
+  const li = e.target.closest('.queue-item');
+  if (!li) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  queueList.querySelectorAll('.queue-item.drag-over').forEach(el => el.classList.remove('drag-over'));
+  li.classList.add('drag-over');
+});
+queueList.addEventListener('dragleave', (e) => {
+  const li = e.target.closest('.queue-item');
+  if (li) li.classList.remove('drag-over');
+});
+queueList.addEventListener('drop', (e) => {
+  const li = e.target.closest('.queue-item');
+  if (!li) return;
+  e.preventDefault();
+  li.classList.remove('drag-over');
+  const toIndex = parseInt(li.dataset.index, 10);
+  if (dragSrcIndex === null || dragSrcIndex === toIndex) return;
+  socket.emit('cmd:reorder', { guildId: currentGuildId || _playbackGuildId, fromIndex: dragSrcIndex, toIndex });
+  dragSrcIndex = null;
+});
 
-// --- Keyboard shortcuts ---
 document.addEventListener('keydown', (e) => {
-  // Ignore when typing in inputs
   const tag = document.activeElement?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
   if (e.metaKey || e.ctrlKey) return;
@@ -733,10 +981,10 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// --- Helpers ---
 function emit(event, extra = {}) {
-  if (!currentGuildId) return showToast('서버를 먼저 선택하세요.', 'error');
-  socket.emit(event, { guildId: currentGuildId, ...extra });
+  const gid = currentGuildId || _playbackGuildId;
+  if (!gid) return showToast('서버를 먼저 선택하세요.', 'error');
+  socket.emit(event, { guildId: gid, ...extra });
 }
 
 function escHtml(str) {
@@ -749,3 +997,285 @@ function highlight(text, query) {
   const safeQ = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return safe.replace(new RegExp(safeQ, 'gi'), m => `<mark class="search-highlight">${m}</mark>`);
 }
+
+const fabListen       = document.getElementById('fab-listen');
+const webPlayerPanel  = document.getElementById('web-player');
+const webPlayerClose  = document.getElementById('web-player-close');
+const webPlayerTrack  = document.getElementById('web-player-track');
+const webPlayerVolume = document.getElementById('web-player-volume');
+const webPlayerVolLbl = document.getElementById('web-player-vol-label');
+const webPlayerStatus = document.getElementById('web-player-status');
+
+let webAudio = null;
+let webListenActive = false;
+let webListenTrackUrl = null;
+let webListenHasAudio = false;
+let _webLastPlayStartTs = null;
+
+const savedVol = localStorage.getItem('nambibot_webvol');
+if (savedVol !== null) {
+  const vol = Math.max(0, Math.min(100, parseInt(savedVol, 10) || 0));
+  webPlayerVolume.value = vol;
+  webPlayerVolLbl.textContent = vol + '%';
+}
+
+fabListen.addEventListener('click', () => {
+  if (_webPlayBlocked) {
+    _resumeBlockedPlay();
+    return;
+  }
+  if (webListenActive) {
+    stopWebListen();
+  } else {
+    startWebListen();
+  }
+});
+
+webPlayerClose.addEventListener('click', stopWebListen);
+
+webPlayerPanel.addEventListener('click', (e) => {
+  if (_webPlayBlocked && !e.target.closest('.web-player-close')) {
+    _resumeBlockedPlay();
+  }
+});
+
+webPlayerVolume.addEventListener('input', () => {
+  const vol = parseInt(webPlayerVolume.value, 10);
+  webPlayerVolLbl.textContent = vol + '%';
+  localStorage.setItem('nambibot_webvol', vol);
+  if (webAudio) webAudio.volume = vol / 100;
+});
+
+function startWebListen() {
+  webListenActive = true;
+  fabListen.classList.add('active');
+  fabListen.querySelector('.fab-icon').textContent = '🔊';
+  webPlayerPanel.style.display = '';
+  localStorage.setItem('nambibot_weblisten', '1');
+  nowPlayingHint.style.display = 'none';
+  syncWebAudio();
+}
+
+function stopWebListen() {
+  webListenActive = false;
+  fabListen.classList.remove('active');
+  fabListen.querySelector('.fab-icon').textContent = '🔇';
+  webPlayerPanel.style.display = 'none';
+  localStorage.removeItem('nambibot_weblisten');
+  destroyWebAudio();
+  webListenTrackUrl = null;
+  webPlayerTrack.textContent = '재생 중인 곡 없음';
+  webPlayerTrack.classList.add('idle');
+  webPlayerStatus.textContent = '';
+  webPlayerStatus.className = 'web-player-status';
+  if (isCurrentlyPlaying && !isVoiceConnected) {
+    nowPlayingHint.innerHTML = '음성 채널 연결 없이도 <button class="hint-fab-btn" id="hint-fab-trigger">🔊</button> 버튼으로 브라우저에서 바로 들을 수 있어요';
+    nowPlayingHint.style.display = '';
+    const hintBtn = document.getElementById('hint-fab-trigger');
+    if (hintBtn) hintBtn.addEventListener('click', () => { if (!webListenActive) startWebListen(); }, { once: true });
+  }
+}
+
+let _webPlayBlocked = false;
+
+function _tryWebPlay() {
+  if (!webAudio) return;
+  webAudio.play().then(() => {
+    _webPlayBlocked = false;
+    webPlayerStatus.textContent = '재생 중';
+    webPlayerStatus.className = 'web-player-status';
+    fabListen.classList.remove('blocked');
+  }).catch(() => {
+    _webPlayBlocked = true;
+    webPlayerStatus.textContent = '🔇 버튼을 클릭하여 재생';
+    webPlayerStatus.className = 'web-player-status error';
+    fabListen.classList.add('blocked');
+  });
+}
+
+function _resumeBlockedPlay() {
+  if (!_webPlayBlocked || !webAudio) return;
+  seekWebAudio();
+  webAudio.play().then(() => {
+    _webPlayBlocked = false;
+    webPlayerStatus.textContent = '재생 중';
+    webPlayerStatus.className = 'web-player-status';
+    fabListen.classList.remove('blocked');
+  }).catch(() => {});
+}
+
+const WEB_CROSSFADE_MS = 3000;
+let _crossfadeIntervals = [];
+
+function destroyWebAudio() {
+  _crossfadeIntervals.forEach(iv => clearInterval(iv));
+  _crossfadeIntervals = [];
+  if (webAudio) {
+    webAudio.pause();
+    webAudio.removeAttribute('src');
+    webAudio.load();
+    webAudio = null;
+  }
+}
+
+function crossfadeOutOld(oldAudio) {
+  if (!oldAudio) return;
+  const steps = Math.ceil(WEB_CROSSFADE_MS / 50);
+  const startVol = oldAudio.volume;
+  const delta = startVol / steps;
+  let step = 0;
+  const iv = setInterval(() => {
+    step++;
+    if (step >= steps || oldAudio.paused) {
+      clearInterval(iv);
+      _crossfadeIntervals = _crossfadeIntervals.filter(x => x !== iv);
+      oldAudio.pause();
+      oldAudio.removeAttribute('src');
+      oldAudio.load();
+      return;
+    }
+    oldAudio.volume = Math.max(0, startVol - delta * step);
+  }, 50);
+  _crossfadeIntervals.push(iv);
+}
+
+function crossfadeInNew(audio, targetVol) {
+  if (!audio) return;
+  audio.volume = 0;
+  const steps = Math.ceil(WEB_CROSSFADE_MS / 50);
+  const delta = targetVol / steps;
+  let step = 0;
+  const iv = setInterval(() => {
+    step++;
+    if (step >= steps) {
+      clearInterval(iv);
+      _crossfadeIntervals = _crossfadeIntervals.filter(x => x !== iv);
+      audio.volume = targetVol;
+      return;
+    }
+    audio.volume = Math.min(targetVol, delta * step);
+  }, 50);
+  _crossfadeIntervals.push(iv);
+}
+
+function syncWebAudio() {
+  const gid = currentGuildId || _playbackGuildId;
+  if (!webListenActive || !gid) return;
+
+  const isDownloading = isCurrentlyPlaying && !currentPlayStartTs;
+  if (!currentPlayStartTs && !currentIsPaused) {
+    destroyWebAudio();
+    webListenTrackUrl = null;
+    _webLastPlayStartTs = null;
+    webPlayerTrack.textContent = isDownloading ? '다운로드 중...' : '재생 중인 곡 없음';
+    webPlayerTrack.classList.toggle('idle', !isDownloading);
+    webPlayerStatus.textContent = isDownloading ? '오디오 준비 대기 중' : '';
+    webPlayerStatus.className = 'web-player-status' + (isDownloading ? ' syncing' : '');
+    return;
+  }
+
+  if (currentPlayStartTs && currentPlayStartTs !== _webLastPlayStartTs) {
+    _webLastPlayStartTs = currentPlayStartTs;
+    webListenTrackUrl = null;
+  }
+
+  const streamUrl = `/api/stream/${gid}?t=${Date.now()}`;
+
+  const nowTitle = document.querySelector('.track-title')?.textContent || '';
+  const trackKey = gid + ':' + nowTitle + ':' + currentPlayStartTs;
+
+  if (webListenTrackUrl !== trackKey) {
+    const oldAudio = webAudio;
+    webListenTrackUrl = trackKey;
+
+    webAudio = new Audio();
+    const targetVol = parseInt(webPlayerVolume.value, 10) / 100;
+    webAudio.volume = 0;
+    webAudio.preload = 'auto';
+
+    webPlayerTrack.textContent = nowTitle || '로딩 중...';
+    webPlayerTrack.classList.remove('idle');
+    webPlayerStatus.textContent = '스트림 로딩 중...';
+    webPlayerStatus.className = 'web-player-status syncing';
+
+    webAudio.addEventListener('canplay', () => {
+      seekWebAudio();
+      if (!currentIsPaused) {
+        webAudio.play().then(() => {
+          _webPlayBlocked = false;
+          webPlayerStatus.textContent = '재생 중';
+          webPlayerStatus.className = 'web-player-status';
+          fabListen.classList.remove('blocked');
+          if (oldAudio && !oldAudio.paused) {
+            crossfadeOutOld(oldAudio);
+          }
+          crossfadeInNew(webAudio, targetVol);
+        }).catch(() => {
+          _webPlayBlocked = true;
+          webPlayerStatus.textContent = '🔇 버튼을 클릭하여 재생';
+          webPlayerStatus.className = 'web-player-status error';
+          fabListen.classList.add('blocked');
+          if (oldAudio) { oldAudio.pause(); oldAudio.removeAttribute('src'); }
+        });
+      } else {
+        webPlayerStatus.textContent = '일시정지';
+        webPlayerStatus.className = 'web-player-status';
+        if (oldAudio) { oldAudio.pause(); oldAudio.removeAttribute('src'); }
+      }
+    }, { once: true });
+
+    webAudio.addEventListener('error', () => {
+      webPlayerStatus.textContent = '스트림 오류';
+      webPlayerStatus.className = 'web-player-status error';
+    });
+
+    webAudio.addEventListener('ended', () => {
+      webPlayerStatus.textContent = '곡 종료';
+      webPlayerStatus.className = 'web-player-status';
+      webListenTrackUrl = null;
+    });
+
+    webAudio.src = streamUrl;
+    webAudio.load();
+  } else if (webAudio) {
+    if (currentIsPaused) {
+      webAudio.pause();
+      webPlayerStatus.textContent = '일시정지';
+      webPlayerStatus.className = 'web-player-status';
+    } else {
+      seekWebAudio();
+      _tryWebPlay();
+    }
+  }
+}
+
+function seekWebAudio() {
+  if (!webAudio || !webAudio.duration || isNaN(webAudio.duration)) return;
+  let targetSec;
+  if (currentIsPaused) {
+    targetSec = pausedElapsed;
+  } else if (currentPlayStartTs) {
+    targetSec = (Date.now() - currentPlayStartTs - currentPausedDuration) / 1000;
+  } else {
+    return;
+  }
+  targetSec = Math.max(0, Math.min(targetSec, webAudio.duration));
+  if (Math.abs(webAudio.currentTime - targetSec) > 1.5) {
+    webAudio.currentTime = targetSec;
+  }
+}
+
+const _origRenderState = renderState;
+renderState = function(state) {
+  _origRenderState(state);
+  webListenHasAudio = !!state.hasAudioFile;
+  if (webListenActive) {
+    syncWebAudio();
+  }
+};
+
+document.addEventListener('visibilitychange', () => {
+  document.body.classList.toggle('tab-hidden', document.hidden);
+});
+
+localStorage.removeItem('nambibot_weblisten');

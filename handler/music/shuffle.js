@@ -1,20 +1,11 @@
 const { MessageFlags, EmbedBuilder } = require('discord.js');
 const { getState } = require('../../state');
+const { initPlayer } = require('../../player');
 const stateBus = require('../../web/stateBus');
-/** @typedef {import('discord.js').ChatInputCommandInteraction} ChatInputCommandInteraction */
 
-/**
- * @param {ChatInputCommandInteraction} interaction
- */
 async function execute(interaction) {
+  initPlayer(interaction.guild.id);
   const state = getState(interaction.guild.id);
-
-  if (!state.connection) {
-    return interaction.reply({
-      content: '❌ 봇이 음성 채널에 참가 중이지 않습니다.',
-      flags: MessageFlags.Ephemeral,
-    });
-  }
 
   if (state.queue.length === 0) {
     return interaction.reply({
@@ -29,6 +20,8 @@ async function execute(interaction) {
     [state.queue[i], state.queue[j]] = [state.queue[j], state.queue[i]];
   }
   stateBus.emit('stateChanged', interaction.guild.id);
+  stateBus.emit('notice', interaction.guild.id, `🎧 ${interaction.user.username} · 대기열 섞기 (${len}곡)`);
+  stateBus.emit('uiAction', interaction.guild.id, 'shuffle');
 
   await interaction.reply({
     embeds: [new EmbedBuilder()

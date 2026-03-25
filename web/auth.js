@@ -2,21 +2,23 @@ const crypto = require('crypto');
 
 const PASSWORD    = process.env.WEB_PASSWORD || '';
 const COOKIE_NAME = 'nambi_sess';
-const MAX_AGE_SEC = 30 * 24 * 60 * 60; // 30일
+const MAX_AGE_SEC = 30 * 24 * 60 * 60;
+
+if (PASSWORD.length > 0 && PASSWORD.length < 8) {
+  console.warn('[auth] 경고: WEB_PASSWORD가 8자 미만입니다. 보안을 위해 더 긴 비밀번호를 사용하세요.');
+}
 
 function isSecureRequest(req) {
   return req.secure || req.headers['x-forwarded-proto'] === 'https';
 }
 
-// ── 브루트포스 방어 ──────────────────────────────────────────
 const MAX_ATTEMPTS  = 10;
-const WINDOW_MS     = 10 * 60 * 1000; // 10분 내 실패 카운트 윈도우
-const LOCKOUT_MS    = 15 * 60 * 1000; // 잠금 지속 시간
-const FAIL_DELAY_MS = 1000;            // 실패 시 응답 딜레이 (브루트포스 속도 저하)
+const WINDOW_MS     = 10 * 60 * 1000;
+const LOCKOUT_MS    = 15 * 60 * 1000;
+const FAIL_DELAY_MS = 1000;
 
-const failMap = new Map(); // ip → { count, windowStart, lockedUntil }
+const failMap = new Map();
 
-// 오래된 항목 주기적 정리 (메모리 누수 방지)
 setInterval(() => {
   const now = Date.now();
   for (const [ip, e] of failMap) {
@@ -24,16 +26,10 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000);
 
-/**
- * 보안 결정에 사용할 IP — X-Forwarded-For는 스푸핑 가능하므로 socket 주소만 사용
- */
 function getClientIp(req) {
-  return req.socket?.remoteAddress ?? 'unknown';
+  return req.socket?.remoteAddress ?? req.address ?? 'unknown';
 }
 
-/**
- * 요청 허용 여부 확인. 잠금 중이면 { allowed: false, remaining } 반환.
- */
 function checkRateLimit(ip) {
   const now = Date.now();
   const e = failMap.get(ip) ?? { count: 0, windowStart: now, lockedUntil: 0 };
@@ -64,15 +60,16 @@ function recordSuccess(ip) {
   failMap.delete(ip);
 }
 
-// ── 핵심 인증 로직 ────────────────────────────────────────────
-
 function isEnabled() {
   return PASSWORD.length > 0;
 }
 
-/** 비밀번호 기반 결정론적 토큰 — 서버 재시작 후에도 쿠키 유효 */
-function makeToken() {
-  return crypto.createHmac('sha256', PASSWORD).update('nambibot-auth-v1').digest('hex');
+function makeToken(ip) {
+  return crypto.createHmac('sha256', PASSWORD).update(`nambibot-auth-v1:${ip || ''}`).digest('hex');
+}
+
+function deriveSessionKey() {
+  return crypto.createHmac('sha256', PASSWORD).update('nambibot-socket-enc-v1').digest('hex');
 }
 
 function parseCookies(header) {
@@ -88,13 +85,12 @@ function parseCookies(header) {
 
 function isAuthenticated(req) {
   if (!isEnabled()) return true;
+  const ip = getClientIp(req);
   const cookies  = parseCookies(req.headers?.cookie);
   const provided = cookies[COOKIE_NAME] ?? '';
-  const expected = makeToken();
-  // 길이 다르면 즉시 false (timingSafeEqual은 동일 길이 필요)
+  const expected = makeToken(ip);
   if (provided.length !== expected.length) return false;
   try {
-    // 타이밍 어택 방지: 상수 시간 비교
     return crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
   } catch {
     return false;
@@ -102,9 +98,10 @@ function isAuthenticated(req) {
 }
 
 function setAuthCookie(req, res) {
+  const ip = getClientIp(req);
   const secure = isSecureRequest(req) ? '; Secure' : '';
   res.setHeader('Set-Cookie',
-    `${COOKIE_NAME}=${makeToken()}; HttpOnly; SameSite=Strict; Max-Age=${MAX_AGE_SEC}; Path=/${secure}`
+    `${COOKIE_NAME}=${makeToken(ip)}; HttpOnly; SameSite=Strict; Max-Age=${MAX_AGE_SEC}; Path=/${secure}`
   );
 }
 
@@ -115,11 +112,40 @@ function clearAuthCookie(req, res) {
   );
 }
 
-const PUBLIC_PATHS = new Set(['/login', '/logout', '/style.css']);
+const nonceMap = new Map();
+const NONCE_TTL_MS = 60_000;
+
+function createNonce() {
+  const nonce = crypto.randomBytes(32).toString('hex');
+  nonceMap.set(nonce, { createdAt: Date.now() });
+  return nonce;
+}
+
+function verifyChallenge(nonce, hash) {
+  const entry = nonceMap.get(nonce);
+  if (!entry) return false;
+  nonceMap.delete(nonce);
+  if (Date.now() - entry.createdAt > NONCE_TTL_MS) return false;
+  const expected = crypto.createHash('sha256').update(PASSWORD + nonce).digest('hex');
+  if (hash.length !== expected.length) return false;
+  try {
+    return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(expected));
+  } catch { return false; }
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [n, e] of nonceMap) {
+    if (now - e.createdAt > NONCE_TTL_MS) nonceMap.delete(n);
+  }
+}, 60_000);
+
+const PUBLIC_PATHS = new Set(['/login', '/logout', '/style.css', '/api/auth/challenge']);
 
 function middleware(req, res, next) {
   if (!isEnabled()) return next();
   if (PUBLIC_PATHS.has(req.path)) return next();
+  if (/\.(js|css|svg|png|ico|woff2?)$/i.test(req.path)) return next();
   if (!isAuthenticated(req)) return res.redirect('/login');
   next();
 }
@@ -127,5 +153,5 @@ function middleware(req, res, next) {
 module.exports = {
   isEnabled, isAuthenticated, setAuthCookie, clearAuthCookie, middleware,
   getClientIp, checkRateLimit, recordFailure, recordSuccess, FAIL_DELAY_MS,
-  COOKIE_NAME,
+  COOKIE_NAME, createNonce, verifyChallenge, deriveSessionKey,
 };

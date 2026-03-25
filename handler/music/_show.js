@@ -1,6 +1,5 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { AudioPlayerStatus } = require('@discordjs/voice');
-/** @typedef {import('../../types').PlayerState} PlayerState */
 
 const PAGE_SIZE = 10;
 
@@ -10,12 +9,6 @@ function fmtTime(sec) {
   return `${m}:${s}`;
 }
 
-/**
- * Builds the queue embed for a given page.
- * @param {PlayerState} state
- * @param {number} [page=0]
- * @returns {{ embed: EmbedBuilder, page: number, totalPages: number }}
- */
 function buildShowEmbed(state, page = 0) {
   const isPaused   = state.player?.state?.status === AudioPlayerStatus.Paused;
   const totalPages = state.queue.length > 0 ? Math.ceil(state.queue.length / PAGE_SIZE) : 1;
@@ -52,12 +45,6 @@ function buildShowEmbed(state, page = 0) {
   return { embed, page, totalPages };
 }
 
-/**
- * Builds a pagination button row for the queue embed.
- * @param {string} guildId
- * @param {number} page  current page (0-based)
- * @param {number} totalPages
- */
 function buildPageRow(guildId, page, totalPages) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()

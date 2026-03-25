@@ -1,21 +1,12 @@
 const { MessageFlags, EmbedBuilder } = require('discord.js');
 const { AudioPlayerStatus } = require('@discordjs/voice');
 const { getState } = require('../../state');
-const { playItem } = require('../../player');
-/** @typedef {import('discord.js').ChatInputCommandInteraction} ChatInputCommandInteraction */
+const { playItem, initPlayer } = require('../../player');
+const stateBus = require('../../web/stateBus');
 
-/**
- * @param {ChatInputCommandInteraction} interaction
- */
 async function execute(interaction) {
+  initPlayer(interaction.guild.id);
   const state = getState(interaction.guild.id);
-
-  if (!state.connection) {
-    return interaction.reply({
-      content: '❌ 봇이 음성 채널에 참가 중이지 않습니다.',
-      flags: MessageFlags.Ephemeral,
-    });
-  }
 
   if (state.queue.length === 0) {
     return interaction.reply({
@@ -31,11 +22,10 @@ async function execute(interaction) {
     });
   }
 
-  const current = state.currentItem;  // 건너뛸 곡
-  const item    = state.queue.shift(); // 다음 곡
-  if (current) state.queue.push(current); // 건너뛴 곡은 대기열 맨 뒤로
+  const current = state.currentItem;
+  const item    = state.queue.shift();
+  if (current) state.queue.push(current);
 
-  // Stop current playback without triggering auto-play
   if (state.player.state.status !== AudioPlayerStatus.Idle) {
     state._skipAutoAdvance = true;
     state.player.stop();
@@ -47,6 +37,8 @@ async function execute(interaction) {
   if (current) embed.setFooter({ text: `건너뜀: ${current.title} → 대기열 맨 뒤로` });
 
   await interaction.reply({ embeds: [embed] });
+  stateBus.emit('notice', interaction.guild.id, `🎧 ${interaction.user.username} · 스킵: "${current?.title ?? '알 수 없음'}"`);
+
   try {
     await playItem(state, item);
   } catch (err) {

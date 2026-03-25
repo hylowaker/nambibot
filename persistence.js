@@ -1,21 +1,20 @@
 const fs = require('fs');
+const fsPromises = require('fs/promises');
 const path = require('path');
 const os = require('os');
-/** @typedef {import('./types').TrackItem} TrackItem */
 
 const NAMBI_DIR = process.env.NAMBI_DIR || path.join(os.homedir(), '.nambi');
 const STATE_FILE = path.join(NAMBI_DIR, 'queue-state.json');
 
 console.log(`[persistence] 상태 파일 경로: ${STATE_FILE}`);
 
-/**
- * 모든 길드의 대기열 + 연결 채널 정보를 파일에 저장합니다.
- * @param {IterableIterator<import('./types').PlayerState>} allStates
- */
 const MAX_HISTORY = 20;
 
-function saveState(allStates) {
-  /** @type {Record<string, { channelName: string|null, items: TrackItem[], history: TrackItem[] }>} */
+let _saveTimer = null;
+let _getAllStatesFn = null;
+const SAVE_DEBOUNCE_MS = 500;
+
+function _collectData(allStates) {
   const data = {};
 
   for (const state of allStates) {
@@ -33,10 +32,15 @@ function saveState(allStates) {
       };
     }
   }
+  return data;
+}
+
+async function saveState(allStates) {
+  const data = _collectData(allStates);
 
   try {
-    fs.mkdirSync(NAMBI_DIR, { recursive: true });
-    fs.writeFileSync(STATE_FILE, JSON.stringify(data), 'utf8');
+    await fsPromises.mkdir(NAMBI_DIR, { recursive: true });
+    await fsPromises.writeFile(STATE_FILE, JSON.stringify(data), 'utf8');
     const total = Object.values(data).reduce((s, v) => s + v.items.length, 0);
     console.log(`[persistence] 저장: ${Object.keys(data).length}개 길드, 총 ${total}곡`);
   } catch (err) {
@@ -44,10 +48,34 @@ function saveState(allStates) {
   }
 }
 
-/**
- * 저장된 상태를 불러옵니다.
- * @returns {Record<string, { channelName: string|null, items: TrackItem[] }>}
- */
+function saveStateSync(allStates) {
+  const data = _collectData(allStates);
+  try {
+    fs.mkdirSync(NAMBI_DIR, { recursive: true });
+    fs.writeFileSync(STATE_FILE, JSON.stringify(data), 'utf8');
+    const total = Object.values(data).reduce((s, v) => s + v.items.length, 0);
+    console.log(`[persistence] 동기 저장: ${Object.keys(data).length}개 길드, 총 ${total}곡`);
+  } catch (err) {
+    console.error('[persistence] 동기 저장 실패:', err);
+  }
+}
+
+function scheduleSave() {
+  if (_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => {
+    _saveTimer = null;
+    if (_getAllStatesFn) saveState(_getAllStatesFn());
+  }, SAVE_DEBOUNCE_MS);
+}
+
+function flushSync() {
+  if (_saveTimer) {
+    clearTimeout(_saveTimer);
+    _saveTimer = null;
+    if (_getAllStatesFn) saveStateSync(_getAllStatesFn());
+  }
+}
+
 function loadState() {
   try {
     if (!fs.existsSync(STATE_FILE)) {
@@ -57,7 +85,6 @@ function loadState() {
     const raw = fs.readFileSync(STATE_FILE, 'utf8');
     const parsed = JSON.parse(raw);
 
-    // 이전 형식(배열) → 새 형식({ channelName, items }) 변환
     const data = {};
     for (const [guildId, val] of Object.entries(parsed)) {
       if (Array.isArray(val)) {
@@ -76,15 +103,15 @@ function loadState() {
   }
 }
 
-/**
- * stateBus의 stateChanged 이벤트를 구독하여 상태 변경 시마다 즉시 저장합니다.
- * @param {import('events').EventEmitter} stateBus
- * @param {() => IterableIterator<import('./types').PlayerState>} getAllStates
- */
 function init(stateBus, getAllStates) {
+  _getAllStatesFn = getAllStates;
   stateBus.on('stateChanged', () => {
-    saveState(getAllStates());
+    scheduleSave();
   });
+
+  process.on('exit', () => flushSync());
+  process.on('SIGINT', () => { flushSync(); process.exit(0); });
+  process.on('SIGTERM', () => { flushSync(); process.exit(0); });
 }
 
 module.exports = { init, saveState, loadState };

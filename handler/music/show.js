@@ -2,11 +2,7 @@ const { MessageFlags } = require('discord.js');
 const { getState } = require('../../state');
 const { buildShowEmbed, buildPageRow } = require('./_show');
 const { buildControlRow } = require('./_controls');
-/** @typedef {import('discord.js').ChatInputCommandInteraction} ChatInputCommandInteraction */
 
-/**
- * @param {ChatInputCommandInteraction} interaction
- */
 async function execute(interaction) {
   const state  = getState(interaction.guild.id);
   const hidden = interaction.options.getBoolean('hidden') ?? false;

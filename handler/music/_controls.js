@@ -1,11 +1,6 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { AudioPlayerStatus } = require('@discordjs/voice');
-/** @typedef {import('../../types').PlayerState} PlayerState */
 
-/**
- * Builds a playback control button row based on the current guild state.
- * @param {PlayerState} state
- */
 function buildControlRow(state) {
   const isPaused = state.player?.state?.status === AudioPlayerStatus.Paused;
   const isActive = !!state.currentItem;

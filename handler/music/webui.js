@@ -1,9 +1,5 @@
 const { MessageFlags, EmbedBuilder } = require('discord.js');
-/** @typedef {import('discord.js').ChatInputCommandInteraction} ChatInputCommandInteraction */
 
-/**
- * @param {ChatInputCommandInteraction} interaction
- */
 async function execute(interaction) {
   const port = process.env.WEB_PORT || 3000;
   const url = process.env.WEB_UI_URL || `http://localhost:${port}`;

@@ -1,20 +1,12 @@
 const { MessageFlags, EmbedBuilder } = require('discord.js');
 const { AudioPlayerStatus } = require('@discordjs/voice');
 const { getState } = require('../../state');
-/** @typedef {import('discord.js').ChatInputCommandInteraction} ChatInputCommandInteraction */
+const { initPlayer } = require('../../player');
+const stateBus = require('../../web/stateBus');
 
-/**
- * @param {ChatInputCommandInteraction} interaction
- */
 async function execute(interaction) {
+  initPlayer(interaction.guild.id);
   const state = getState(interaction.guild.id);
-
-  if (!state.connection) {
-    return interaction.reply({
-      content: '❌ 봇이 음성 채널에 참가 중이지 않습니다.',
-      flags: MessageFlags.Ephemeral,
-    });
-  }
 
   if (state.player.state.status === AudioPlayerStatus.Idle) {
     return interaction.reply({
@@ -23,14 +15,16 @@ async function execute(interaction) {
     });
   }
 
+  const title = state.currentItem?.title ?? '알 수 없음';
   state._stopRequested = true;
   state.player.stop();
   state.currentItem = null;
+  stateBus.emit('notice', interaction.guild.id, `🎧 ${interaction.user.username} · 삭제: "${title}"`);
 
   await interaction.reply({
     embeds: [new EmbedBuilder()
       .setColor(0xFF375F)
-      .setDescription('⏹️ 재생을 중단했습니다.')],
+      .setDescription(`🗑️ **${title}** 을(를) 삭제했습니다.`)],
   });
 }
 

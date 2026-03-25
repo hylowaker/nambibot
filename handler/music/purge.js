@@ -1,19 +1,10 @@
 const { MessageFlags, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { getState } = require('../../state');
-/** @typedef {import('discord.js').ChatInputCommandInteraction} ChatInputCommandInteraction */
+const { initPlayer } = require('../../player');
 
-/**
- * @param {ChatInputCommandInteraction} interaction
- */
 async function execute(interaction) {
+  initPlayer(interaction.guild.id);
   const state = getState(interaction.guild.id);
-
-  if (!state.connection) {
-    return interaction.reply({
-      content: '❌ 봇이 음성 채널에 참가 중이지 않습니다.',
-      flags: MessageFlags.Ephemeral,
-    });
-  }
 
   const count = state.queue.length;
   if (count === 0) {

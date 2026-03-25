@@ -2,7 +2,6 @@
 
 trap 'printf "\n"; exit 130' INT TERM
 
-# ── 색상 / 스타일 ─────────────────────────────────────────
 RESET='\033[0m'
 BOLD='\033[1m'
 DIM='\033[2m'
@@ -17,7 +16,6 @@ SILVER='\033[37m'
 WHITE='\033[97m'
 BWHITE='\033[1;97m'
 
-# ── 출력 유틸 ─────────────────────────────────────────────
 ok()   { printf "  ${BGREEN}✓${RESET}  $*\n"; }
 fail() { printf "  ${BRED}✗${RESET}  $*\n"; }
 warn() { printf "  ${YELLOW}⚠${RESET}  $*\n"; }
@@ -31,7 +29,6 @@ section() {
   printf "  ${SILVER}$(printf '─%.0s' $(seq 1 44))${RESET}\n"
 }
 
-# ── 마스킹 입력 (* 표시) ──────────────────────────────────
 read_masked() {
   local var="$1"
   local value="" char entered=0
@@ -55,9 +52,7 @@ read_masked() {
   [[ $entered -eq 1 ]]
 }
 
-# ── 입력 프롬프트 ─────────────────────────────────────────
 ask() {
-  # ask <VAR> <label> [secret]
   local var="$1" label="$2" secret="$3"
   printf "  ${BWHITE}?${RESET}  ${label}  ${CYAN}›${RESET} "
   if [ "$secret" = "secret" ]; then
@@ -70,7 +65,6 @@ ask() {
 }
 
 ask_default() {
-  # ask_default <VAR> <label> <default>
   local var="$1" label="$2" default="$3" value
   printf "  ${BWHITE}?${RESET}  ${label}  ${CYAN}(기본값: ${default}) ›${RESET} "
   read -r value || exit 1
@@ -78,7 +72,6 @@ ask_default() {
 }
 
 ask_yn() {
-  # ask_yn <VAR> <label>  → VAR=y or n
   local var="$1" label="$2" value
   while true; do
     printf "  ${BWHITE}?${RESET}  ${label}  ${CYAN}(y/N) ›${RESET} "
@@ -91,14 +84,12 @@ ask_yn() {
   done
 }
 
-# ── 경로 설정 ─────────────────────────────────────────────
 NAMBI_DIR="${NAMBI_DIR:-$HOME/.nambi}"
 ENV_FILE="$NAMBI_DIR/.env"
 ENC_FILE="$NAMBI_DIR/.env.enc"
 PASS_FILE="$NAMBI_DIR/.passphrase"
 CRYPTO_SCRIPT="$(cd "$(dirname "$0")" && pwd)/env-crypto.js"
 
-# ── 헤더 ─────────────────────────────────────────────────
 _ver=$(grep '"version"' "$(cd "$(dirname "$0")/.." && pwd)/package.json" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)
 _sub="Discord Music Bot  v${_ver}"
 _pad=$(printf '%*s' $((68 - ${#_sub})) '')
@@ -116,7 +107,6 @@ hint "설정 파일은 AES-256 암호화 후 저장됩니다."
 hint "저장 경로: ${SILVER}$NAMBI_DIR"
 echo ""
 
-# ── 이미 설정된 경우 ──────────────────────────────────────
 if [ -f "$ENC_FILE" ] && [ -s "$ENC_FILE" ]; then
   ok "암호화된 설정 파일이 이미 존재합니다."
   info "${SILVER}$ENC_FILE"
@@ -128,13 +118,11 @@ mkdir -p "$NAMBI_DIR"
 rm -f "$ENV_FILE"
 > "$ENV_FILE"
 
-# ── Discord 설정 ──────────────────────────────────────────
 section "Discord 설정"
 hint "Discord Developer Portal 에서 확인할 수 있습니다."
 hint "${YELLOW}https://discord.com/developers/applications"
 echo ""
 
-# DISCORD_TOKEN
 while true; do
   ask "DISCORD_TOKEN" "${CYAN}DISCORD_TOKEN  봇 토큰" "secret"
   if [ -z "$DISCORD_TOKEN" ]; then
@@ -154,7 +142,6 @@ echo "DISCORD_TOKEN=$DISCORD_TOKEN" >> "$ENV_FILE"
 
 echo ""
 
-# APPLICATION_ID
 while true; do
   ask "APPLICATION_ID" "${CYAN}APPLICATION_ID  애플리케이션(클라이언트) ID"
   if ! echo "$APPLICATION_ID" | grep -qE '^[0-9]{17,19}$'; then
@@ -169,7 +156,6 @@ echo "APPLICATION_ID=$APPLICATION_ID" >> "$ENV_FILE"
 
 echo ""
 
-# GUILD_ID
 while true; do
   ask "GUILD_ID" "${CYAN}GUILD_ID  서버(길드) ID"
   if ! echo "$GUILD_ID" | grep -qE '^[0-9]{17,19}$'; then
@@ -182,7 +168,6 @@ while true; do
 done
 echo "GUILD_ID=$GUILD_ID" >> "$ENV_FILE"
 
-# ── Web UI 설정 ───────────────────────────────────────────
 section "Web UI 설정"
 echo ""
 
@@ -231,7 +216,6 @@ while true; do
 done
 echo "WEB_PASSWORD=${WEB_PASS_VAL}" >> "$ENV_FILE"
 
-# ── 기타 설정 ─────────────────────────────────────────────
 section "기타 설정"
 echo ""
 
@@ -243,24 +227,16 @@ else
   echo "DEVELOPE_PREFIX=" >> "$ENV_FILE"
 fi
 
-# ── 암호화 패스프레이즈 ───────────────────────────────────
 section "설정 파일 암호화"
-hint "패스프레이즈는 .passphrase 에 저장되어 이후 시작 시 자동으로 사용됩니다."
+hint "패스프레이즈는 자동으로 생성되어 .passphrase 에 저장됩니다."
 echo ""
 
-while true; do
-  ask "PASSPHRASE" "${CYAN}패스프레이즈"
-  if [ -z "$PASSPHRASE" ]; then
-    warn "패스프레이즈는 비워둘 수 없습니다."
-    continue
-  fi
-  ask "PASSPHRASE2" "${CYAN}패스프레이즈 확인"
-  if [ "$PASSPHRASE" != "$PASSPHRASE2" ]; then
-    warn "패스프레이즈가 일치하지 않습니다. 다시 입력해주세요."
-    continue
-  fi
-  break
-done
+PASSPHRASE=$(LC_ALL=C tr -dc 'A-Za-z0-9!@#$%^&*_-' < /dev/urandom | head -c 32)
+if [ -z "$PASSPHRASE" ]; then
+  fail "패스프레이즈 생성에 실패했습니다."
+  exit 1
+fi
+ok "패스프레이즈가 자동으로 생성되었습니다."
 
 echo ""
 printf "  ${CYAN}·${RESET}  암호화 중..."
@@ -275,7 +251,6 @@ else
   exit 1
 fi
 
-# ── 완료 ─────────────────────────────────────────────────
 echo ""
 printf "${BGREEN}${BOLD}"
 echo "  ╭────────────────────────────────────────────╮"

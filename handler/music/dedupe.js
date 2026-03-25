@@ -1,20 +1,11 @@
 const { MessageFlags, EmbedBuilder } = require('discord.js');
 const { getState } = require('../../state');
+const { initPlayer } = require('../../player');
 const stateBus = require('../../web/stateBus');
-/** @typedef {import('discord.js').ChatInputCommandInteraction} ChatInputCommandInteraction */
 
-/**
- * @param {ChatInputCommandInteraction} interaction
- */
 async function execute(interaction) {
+  initPlayer(interaction.guild.id);
   const state = getState(interaction.guild.id);
-
-  if (!state.connection) {
-    return interaction.reply({
-      content: '❌ 봇이 음성 채널에 참가 중이지 않습니다.',
-      flags: MessageFlags.Ephemeral,
-    });
-  }
 
   const before = state.queue.length;
   const seen = new Set();
@@ -25,6 +16,8 @@ async function execute(interaction) {
   });
   const removed = before - state.queue.length;
   stateBus.emit('stateChanged', interaction.guild.id);
+  stateBus.emit('notice', interaction.guild.id, `🎧 ${interaction.user.username} · 중복 제거: ${removed}곡 삭제됨`);
+  stateBus.emit('uiAction', interaction.guild.id, 'dedupe');
 
   if (removed === 0) {
     return interaction.reply({

@@ -3,7 +3,7 @@
 #
 # 수동으로 등록할 경우:
 #   1. 아래 /path/to/nambibot 과 /home/USER 를 실제 경로로 변경
-#   2. cp examples/nambibot.service ~/.config/systemd/user/nambibot.service
+#   2. cp scripts/nambibot.service ~/.config/systemd/user/nambibot.service
 #   3. systemctl --user daemon-reload
 #   4. systemctl --user enable --now nambibot
 #
@@ -18,7 +18,7 @@ After=network.target
 Type=simple
 WorkingDirectory=/path/to/nambibot
 Environment=NAMBI_DIR=/home/USER/.nambi
-ExecStart=/bin/bash -c 'NAMBI_PASSPHRASE=$$(cat /home/USER/.nambi/.passphrase) && exec env $$(NAMBI_PASSPHRASE=$$NAMBI_PASSPHRASE node /path/to/nambibot/scripts/env-crypto.js decrypt < /home/USER/.nambi/.env.enc 2>/dev/null | grep -v "^#" | grep -v "^$$" | xargs) NAMBI_DIR=/home/USER/.nambi node /path/to/nambibot/index.js'
+ExecStart=/bin/bash -c 'NAMBI_PASSPHRASE=$$(cat /home/USER/.nambi/.passphrase) && exec env $$(NAMBI_PASSPHRASE=$$NAMBI_PASSPHRASE node /path/to/nambibot/tools/env-crypto.js decrypt < /home/USER/.nambi/.env.enc 2>/dev/null | grep -v "^#" | grep -v "^$$" | xargs) NAMBI_DIR=/home/USER/.nambi node /path/to/nambibot/index.js'
 
 Restart=on-failure
 RestartSec=5s

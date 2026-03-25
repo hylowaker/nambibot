@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>nambibot – 시스템 로그</title>
+  <title>nambibot · 시스템 로그</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/style.css">
   <style>
     body {
@@ -556,7 +557,7 @@
 </head>
 <body>
   <header class="logs-header">
-    <!-- 왼쪽: 페이지 제목 -->
+
     <div class="logs-title-section">
       <span class="logs-title-label">LOG</span>
       <span class="logs-title-name">시스템 로그</span>
@@ -564,7 +565,7 @@
 
     <div class="header-divider"></div>
 
-    <!-- 오른쪽: 봇 프로필 + 연결 상태 -->
+
     <div class="logs-bot-profile">
       <div class="logs-avatar-wrap">
         <img id="logs-bot-avatar" class="logs-avatar" alt="" style="display:none">
@@ -592,7 +593,7 @@
     </div>
   </div>
 
-  <!-- 시스템 환경 카드 -->
+
   <div class="sysinfo-section">
     <div class="sysinfo-header">
       <span class="sysinfo-title">시스템 환경</span>
@@ -603,7 +604,7 @@
     </div>
     <div class="sysinfo-body collapsed" id="sysinfo-body">
 
-      <!-- 런타임 -->
+
       <div class="sysinfo-group-label">런타임</div>
       <div class="sysinfo-item">
         <span class="sysinfo-key">Node.js</span>
@@ -622,7 +623,7 @@
         <span class="sysinfo-val" id="si-uptime">—</span>
       </div>
 
-      <!-- 프로세스 메모리 -->
+
       <div class="sysinfo-group-label">프로세스 메모리</div>
       <div class="sysinfo-item">
         <span class="sysinfo-key">RSS</span>
@@ -641,7 +642,7 @@
         <span class="sysinfo-val" id="si-external">—</span>
       </div>
 
-      <!-- 시스템 -->
+
       <div class="sysinfo-group-label">시스템</div>
       <div class="sysinfo-item">
         <span class="sysinfo-key">OS 플랫폼</span>
@@ -664,7 +665,7 @@
         <span class="sysinfo-val" id="si-sys-uptime">—</span>
       </div>
 
-      <!-- CPU -->
+
       <div class="sysinfo-group-label">CPU</div>
       <div class="sysinfo-item">
         <span class="sysinfo-key">모델</span>
@@ -679,7 +680,7 @@
         <span class="sysinfo-val" id="si-loadavg">—</span>
       </div>
 
-      <!-- 시스템 메모리 -->
+
       <div class="sysinfo-group-label">시스템 메모리</div>
       <div class="sysinfo-item">
         <span class="sysinfo-key">전체</span>
@@ -694,17 +695,17 @@
         <span class="sysinfo-val" id="si-mem-used">—</span>
       </div>
 
-      <!-- 네트워크 -->
+
       <div class="sysinfo-group-label">네트워크</div>
       <div class="sysinfo-item">
         <span class="sysinfo-key">IP 주소</span>
         <span class="sysinfo-val" id="si-ips">—</span>
       </div>
 
-      <!-- 환경 변수 -->
+
       <div class="sysinfo-group-label">환경 변수</div>
       <div class="sysinfo-env-list" id="si-env-list">
-        <!-- JS로 채움 -->
+
       </div>
 
     </div>
@@ -715,7 +716,7 @@
   </div>
 
   <button class="scroll-to-bottom" id="btn-scroll-bottom">↓ 최신 로그</button>
-  </div><!-- /.logs-body -->
+  </div>
 
   <div id="offline-overlay">
     <div class="offline-card">
@@ -727,6 +728,8 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
+  <script src="/favicon-util.js"></script>
+  <script src="/crypto-util.js"></script>
   <script src="/logs.js"></script>
 </body>
 </html>

@@ -1,13 +1,7 @@
 #!/bin/bash
-# Docker 컨테이너로 nambibot을 실행하는 스크립트
-#
-# 사용법:
-#   ./examples/docker-run.sh          # 첫 실행 또는 재배포
-#   ./examples/docker-run.sh --logs   # 이미 실행 중인 컨테이너 로그만 보기
 
 set -e
 
-# ── 색상 ──────────────────────────────────────────────────
 R='\033[0m'
 DIM='\033[2m'
 BCYAN='\033[1;36m'
@@ -31,7 +25,6 @@ IMAGE_NAME="nambibot"
 CONTAINER_NAME="nambibot"
 NAMBI_DIR="$HOME/.nambi"
 
-# ── 로그만 보기 모드 ──────────────────────────────────────
 if [ "${1}" = "--logs" ]; then
   if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
     err "컨테이너가 실행 중이지 않습니다: ${CONTAINER_NAME}"
@@ -67,7 +60,6 @@ except KeyboardInterrupt:
   exit 0
 fi
 
-# ── 배포 ──────────────────────────────────────────────────
 _ver=$(grep '"version"' "$ROOT_DIR/package.json" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)
 _sub="Discord Music Bot  v${_ver}"
 _pad=$(printf '%*s' $((68 - ${#_sub})) '')
@@ -86,20 +78,17 @@ log "데이터 디렉토리: ${SILVER}${NAMBI_DIR}${R}"
 
 mkdir -p "$NAMBI_DIR"
 
-# 이미지 빌드
 log "Docker 이미지 빌드 중: ${CYAN}${IMAGE_NAME}${R}"
 printf "${DIM}  ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌${R}\n"
 docker build -f "$ROOT_DIR/docker/Dockerfile" -t "$IMAGE_NAME" "$ROOT_DIR"
 printf "${DIM}  ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌${R}\n"
 ok "이미지 빌드 완료"
 
-# 설정 파일 없으면 초기 설정 (호스트에서 직접 실행 — docker run -it 불필요)
 if [ ! -s "$NAMBI_DIR/.env.enc" ]; then
   warn "설정 파일 없음 — 초기 설정을 시작합니다"
-  NAMBI_DIR="$NAMBI_DIR" bash "$ROOT_DIR/scripts/setup-env.sh"
+  NAMBI_DIR="$NAMBI_DIR" bash "$ROOT_DIR/tools/setup-env.sh"
 fi
 
-# 패스프레이즈 확인 (.passphrase 파일 → 환경변수 → 직접 입력 순)
 PASS_FILE="$NAMBI_DIR/.passphrase"
 if [ -z "$NAMBI_PASSPHRASE" ] && [ -f "$PASS_FILE" ] && [ -s "$PASS_FILE" ]; then
   NAMBI_PASSPHRASE=$(cat "$PASS_FILE")
@@ -116,13 +105,13 @@ else
   fi
 fi
 
-# 암호화 파일에서 WEB_PORT 추출
-WEB_PORT=$(NAMBI_PASSPHRASE="$NAMBI_PASSPHRASE" node "$ROOT_DIR/scripts/env-crypto.js" decrypt \
-  < "$NAMBI_DIR/.env.enc" 2>/dev/null \
-  | grep '^WEB_PORT=' | cut -d= -f2 | tr -d ' ' || echo "")
+_decrypted=$(NAMBI_PASSPHRASE="$NAMBI_PASSPHRASE" node "$ROOT_DIR/tools/env-crypto.js" decrypt \
+  < "$NAMBI_DIR/.env.enc" 2>/dev/null || echo "")
+WEB_PORT=$(echo "$_decrypted" | grep '^WEB_PORT=' | cut -d= -f2 | tr -d ' ')
 WEB_PORT=${WEB_PORT:-3000}
+WEB_UI_URL=$(echo "$_decrypted" | grep '^WEB_UI_URL=' | sed 's/^[^=]*=//')
+WEB_UI_URL=${WEB_UI_URL:-"http://localhost:${WEB_PORT}"}
 
-# 기존 컨테이너 제거
 if docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER_NAME" 2>/dev/null; then
   _status=$(docker inspect --format '{{.State.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo "unknown")
   log "기존 컨테이너 종료 및 제거: ${CYAN}${CONTAINER_NAME}${R}  (${_status})"
@@ -130,7 +119,6 @@ if docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER_NAME" 2>/dev/null; 
   ok "기존 컨테이너 제거 완료"
 fi
 
-# 포트 중복 검사
 if ss -tlnp 2>/dev/null | awk '{print $4}' | grep -q ":${WEB_PORT}$" || \
    netstat -tlnp 2>/dev/null | awk '{print $4}' | grep -q ":${WEB_PORT}$"; then
   echo ""
@@ -144,7 +132,7 @@ if ss -tlnp 2>/dev/null | awk '{print $4}' | grep -q ":${WEB_PORT}$" || \
   printf "${BRED}  │${R}     ${DIM}ss -tlnp | grep :${WEB_PORT}${R}${_pp}${BRED}│${R}\n"
   printf "${BRED}  │${R}                                             ${BRED}│${R}\n"
   printf "${BRED}  │${R}  ${SILVER}2.${R} 설정에서 다른 포트를 지정하세요.        ${BRED}│${R}\n"
-  printf "${BRED}  │${R}     ${DIM}./examples/reconfigure.sh${R}               ${BRED}│${R}\n"
+  printf "${BRED}  │${R}     ${DIM}./scripts/reconfigure.sh${R}               ${BRED}│${R}\n"
   printf "${BRED}  ╰─────────────────────────────────────────────╯${R}\n"
   echo ""
   exit 1
@@ -163,11 +151,25 @@ docker run -d \
 
 ok "배포 완료"
 echo ""
-_url="http://localhost:${WEB_PORT}"
-_pad=$(printf '%*s' $((32 - ${#_url})) '')
-printf "${BGREEN}  ╭────────────────────────────────────────────╮${R}\n"
-printf "${BGREEN}  │${R}  ${BCYAN}Web UI${R}  ${BWHITE}${_url}${R}${_pad}  ${BGREEN}│${R}\n"
-printf "${BGREEN}  ╰────────────────────────────────────────────╯${R}\n"
+_listen="http://localhost:${WEB_PORT}"
+_w1=$((8 + ${#WEB_UI_URL}))
+_w2=$((8 + ${#_listen}))
+_inner=$(( _w1 > _w2 ? _w1 : _w2 ))
+[ "$_inner" -lt 40 ] && _inner=40
+_border=$(printf '─%.0s' $(seq 1 $((_inner + 4))))
+if [ "$WEB_UI_URL" != "$_listen" ]; then
+  _p1=$(printf '%*s' $((_inner - _w1)) '')
+  _p2=$(printf '%*s' $((_inner - _w2)) '')
+  printf "${BGREEN}  ╭${_border}╮${R}\n"
+  printf "${BGREEN}  │${R}  ${BCYAN}Web UI${R}  ${BWHITE}${WEB_UI_URL}${R}${_p1}  ${BGREEN}│${R}\n"
+  printf "${BGREEN}  │${R}  ${DIM}Listen  ${_listen}${R}${_p2}  ${BGREEN}│${R}\n"
+  printf "${BGREEN}  ╰${_border}╯${R}\n"
+else
+  _p1=$(printf '%*s' $((_inner - _w1)) '')
+  printf "${BGREEN}  ╭${_border}╮${R}\n"
+  printf "${BGREEN}  │${R}  ${BCYAN}Web UI${R}  ${BWHITE}${_listen}${R}${_p1}  ${BGREEN}│${R}\n"
+  printf "${BGREEN}  ╰${_border}╯${R}\n"
+fi
 echo ""
 sleep 1
 printf "${BCYAN}  로그를 출력합니다.${R}  ${BYELLOW}Ctrl+C${R}${SILVER}로 로그 보기만 종료됩니다.${R}\n"
@@ -211,7 +213,7 @@ else
     printf "${BYELLOW}  │${R}  설정 파일이 초기화되었습니다.              ${BYELLOW}│${R}\n"
     printf "${BYELLOW}  │${R}                                             ${BYELLOW}│${R}\n"
     printf "${BYELLOW}  │${R}  다시 배포하면 설정을 새로 입력합니다.      ${BYELLOW}│${R}\n"
-    printf "${BYELLOW}  │${R}  ${DIM}./examples/docker-run.sh${R}                   ${BYELLOW}│${R}\n"
+    printf "${BYELLOW}  │${R}  ${DIM}./scripts/docker-run.sh${R}                   ${BYELLOW}│${R}\n"
     printf "${BYELLOW}  ╰─────────────────────────────────────────────╯${R}\n"
   else
     printf "${BRED}  ╭─────────────────────────────────────────────╮${R}\n"
@@ -219,7 +221,7 @@ else
     printf "${BRED}  │${R}  Discord 설정값을 확인해주세요.             ${BRED}│${R}\n"
     printf "${BRED}  │${R}                                             ${BRED}│${R}\n"
     printf "${BRED}  │${R}  설정을 다시 입력하려면:                    ${BRED}│${R}\n"
-    printf "${BRED}  │${R}  ${DIM}./examples/reconfigure.sh${R}                  ${BRED}│${R}\n"
+    printf "${BRED}  │${R}  ${DIM}./scripts/reconfigure.sh${R}                  ${BRED}│${R}\n"
     printf "${BRED}  ╰─────────────────────────────────────────────╯${R}\n"
   fi
   echo ""

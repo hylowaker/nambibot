@@ -1,28 +1,26 @@
 const { spawn } = require('child_process');
 const { unlink } = require('fs');
+const https = require('https');
 const os = require('os');
-/** @typedef {import('./types').TrackItem} TrackItem */
 const path = require('path');
 require("dotenv").config({ quiet: true });
 
 const YTDLP_BIN = process.env.YT_DLP_BIN || `yt-dlp${process.platform === 'win32' ? '.exe' : ''}`;
 const FFMPEG_BIN = process.env.FFMPEG_BIN || 'ffmpeg';
 
-/**
- * Fetches metadata from the given URL using yt-dlp.
- * The returned array may contain multiple items if the URL is a playlist.
- *
- * @param {string} url
- * @param {(current: number, total: number|null, item: TrackItem) => void} [onProgress]
- * @returns {Promise<TrackItem[]>}
- */
+function ytThumb(url) {
+  if (!url) return null;
+  const m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?.*v=|embed\/|shorts\/))([A-Za-z0-9_-]{11})/);
+  return m ? `https://i.ytimg.com/vi/${m[1]}/hqdefault.jpg` : null;
+}
+
 function getInfo(url, onProgress) {
   return new Promise((resolve, reject) => {
     const proc = spawn(YTDLP_BIN, [
       '--simulate',
       '--flat-playlist',
       '--no-warnings',
-      '--print', '%(playlist_count)s\t%(title)s\t%(webpage_url)s\t%(uploader)s\t%(duration)s',
+      '--print', '%(playlist_count)s\t%(title)s\t%(webpage_url)s\t%(uploader)s\t%(duration)s\t%(thumbnail)s',
       url,
     ]);
 
@@ -34,7 +32,7 @@ function getInfo(url, onProgress) {
     proc.stdout.on('data', d => {
       buf += d.toString();
       const lines = buf.split('\n');
-      buf = lines.pop(); // 마지막 불완전한 줄은 버퍼에 유지
+      buf = lines.pop();
       for (const line of lines) {
         if (!line.trim()) continue;
         const parts = line.split('\t');
@@ -45,7 +43,9 @@ function getInfo(url, onProgress) {
         const uploader = (parts[3] && parts[3] !== 'NA') ? parts[3].trim().slice(0, 100) : null;
         const durationRaw = parseInt(parts[4], 10);
         const duration = (!isNaN(durationRaw) && durationRaw > 0) ? durationRaw : null;
-        const item = { title, url: itemUrl, uploader, duration };
+        let thumbnail = (parts[5] && parts[5] !== 'NA' && parts[5].startsWith('http')) ? parts[5].trim() : null;
+        if (!thumbnail) thumbnail = ytThumb(itemUrl);
+        const item = { title, url: itemUrl, uploader, duration, thumbnail };
         items.push(item);
         onProgress?.(items.length, total, item);
       }
@@ -67,9 +67,7 @@ function getInfo(url, onProgress) {
 
 const NOISE = ['BrokenPipeError', 'Broken pipe', 'Exception ignored', 'Error writing', 'pipe:1: Broken'];
 
-// Downloads audio from the given URL to a temp OGG/Opus file.
-// Resolves with the temp file path when done. Caller is responsible for deleting the file.
-const DOWNLOAD_TIMEOUT_MS = 120_000; // 2분 초과 시 강제 종료
+const DOWNLOAD_TIMEOUT_MS = 120_000;
 
 function createAudioFile(url, onProgress) {
   const tmpPath = path.join(os.tmpdir(), `nambi-${Date.now()}.ogg`);
@@ -90,6 +88,7 @@ function createAudioFile(url, onProgress) {
       '-loglevel', 'error',
       '-i', 'pipe:0',
       '-vn',
+      '-af', 'loudnorm=I=-14:TP=-1:LRA=11',
       '-ar', '48000',
       '-ac', '2',
       '-c:a', 'libopus',
@@ -154,7 +153,6 @@ function createAudioFile(url, onProgress) {
   });
 }
 
-// Returns yt-dlp version string
 function getVersion() {
   return new Promise(resolve => {
     const proc = spawn(YTDLP_BIN, ['--version']);
@@ -166,4 +164,40 @@ function getVersion() {
   });
 }
 
-module.exports = { YTDLP_BIN, FFMPEG_BIN, getInfo, createAudioFile, getVersion };
+function checkEjs() {
+  return new Promise((resolve) => {
+    const proc = spawn('python3', ['-c', 'import yt_dlp_ejs'], { stdio: 'ignore' });
+    proc.on('close', code => resolve(code === 0));
+    proc.on('error', () => resolve(false));
+  });
+}
+
+const NIGHTLY_FETCH_TIMEOUT_MS = 3000;
+
+function getLatestNightlyTag() {
+  const fetch = new Promise((resolve) => {
+    const req = https.get({
+      hostname: 'api.github.com',
+      path: '/repos/yt-dlp/yt-dlp-nightly-builds/releases/latest',
+      headers: { 'User-Agent': 'nambibot' },
+      timeout: NIGHTLY_FETCH_TIMEOUT_MS,
+    }, (res) => {
+      let data = '';
+      res.on('data', d => data += d);
+      res.on('end', () => {
+        try { resolve(JSON.parse(data).tag_name ?? null); }
+        catch { resolve(null); }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+  });
+
+  const hardCap = new Promise(resolve =>
+    setTimeout(() => resolve(null), NIGHTLY_FETCH_TIMEOUT_MS + 500)
+  );
+
+  return Promise.race([fetch, hardCap]);
+}
+
+module.exports = { YTDLP_BIN, FFMPEG_BIN, getInfo, createAudioFile, getVersion, getLatestNightlyTag, checkEjs };

@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>nambibot — 로그인</title>
+  <title>nambibot · 로그인</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/style.css">
   <style>
     body {
@@ -145,6 +146,12 @@
     }
     .login-error.visible { display: block; }
 
+    .caps-warn {
+      font-size: 0.75rem;
+      color: rgba(255,200,50,0.8);
+      margin-top: 6px;
+    }
+
     @keyframes shake {
       0%        { transform: translateX(0); }
       15%       { transform: translateX(-8px); }
@@ -179,6 +186,7 @@
           <label for="password">비밀번호</label>
           <input type="password" id="password" name="password"
                  autocomplete="current-password" autofocus>
+          <div class="caps-warn" id="caps-warn" style="display:none">⚠ Caps Lock이 켜져 있습니다</div>
         </div>
         <button type="submit" class="btn-primary login-submit">로그인</button>
         <div class="login-error" id="login-error">비밀번호가 올바르지 않습니다.</div>
@@ -186,105 +194,7 @@
     </div>
   </div>
 
-<script>
-    let _errTimer = null;
-    function showErr() {
-      clearTimeout(_errTimer);
-      err.classList.add('visible');
-      _errTimer = setTimeout(() => err.classList.remove('visible'), 4000);
-    }
-
-    const form        = document.getElementById('login-form');
-    const input       = document.getElementById('password');
-    const err         = document.getElementById('login-error');
-    const card        = document.querySelector('.login-card');
-    const submit      = form.querySelector('.login-submit');
-    const connBadge   = document.getElementById('conn-badge');
-    const avatarImg   = document.getElementById('login-avatar');
-    const avatarFb    = document.getElementById('login-avatar-fallback');
-    const profileName = document.getElementById('login-profile-name');
-
-    let _pollTimer = null;
-    function schedulePoll(ms) {
-      clearTimeout(_pollTimer);
-      _pollTimer = setTimeout(() => { updateBotProfile(); }, ms);
-    }
-
-    function updateBotProfile() {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 2000);
-      fetch('/api/bot-profile', { signal: ctrl.signal })
-        .then(r => { clearTimeout(timer); return r.ok ? r.json() : null; })
-        .then(data => {
-          const online = !!(data?.username);
-          if (online) {
-            if (data.username) profileName.textContent = data.username;
-            if (data.avatar) {
-              avatarImg.src = data.avatar;
-              avatarImg.style.display = '';
-              avatarFb.style.display = 'none';
-            }
-            connBadge.textContent = '연결됨';
-            connBadge.className   = 'ok';
-            document.body.classList.remove('ui-disabled');
-            input.disabled = false;
-            submit.disabled = input.value.length === 0;
-          } else {
-            setOffline();
-          }
-          schedulePoll(online ? 2000 : 1000);
-        })
-        .catch(() => { clearTimeout(timer); setOffline(); schedulePoll(1000); });
-    }
-
-    function setOffline() {
-      connBadge.textContent = '오프라인';
-      connBadge.className   = 'err';
-      document.body.classList.add('ui-disabled');
-      input.blur();
-      input.disabled = true;
-      submit.disabled = true;
-    }
-
-    updateBotProfile();
-
-    submit.disabled = true;
-    input.addEventListener('input', () => {
-      submit.disabled = input.value.length === 0;
-    });
-
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      err.classList.remove('visible');
-      submit.disabled = true;
-      input.disabled = true;
-
-      let res;
-      try {
-        res = await fetch('/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password: input.value }),
-        });
-      } finally {
-        if (!document.body.classList.contains('ui-disabled')) {
-          input.disabled = false;
-          submit.disabled = input.value.length === 0;
-        }
-      }
-
-      if (res.ok) {
-        const { redirect } = await res.json();
-        window.location.href = redirect || '/';
-      } else {
-        showErr();
-        input.value = '';
-        input.focus();
-        card.classList.remove('shake');
-        void card.offsetWidth;
-        card.classList.add('shake');
-      }
-    });
-  </script>
+<script src="/favicon-util.js"></script>
+<script src="/login.js"></script>
 </body>
 </html>

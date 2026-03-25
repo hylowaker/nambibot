@@ -1,21 +1,12 @@
 const { MessageFlags, EmbedBuilder } = require('discord.js');
 const { AudioPlayerStatus } = require('@discordjs/voice');
 const { getState } = require('../../state');
-const { playItem } = require('../../player');
-/** @typedef {import('discord.js').ChatInputCommandInteraction} ChatInputCommandInteraction */
+const { playItem, initPlayer } = require('../../player');
+const stateBus = require('../../web/stateBus');
 
-/**
- * @param {ChatInputCommandInteraction} interaction
- */
 async function execute(interaction) {
   const state = getState(interaction.guild.id);
-
-  if (!state.connection) {
-    return interaction.reply({
-      content: '❌ 봇이 음성 채널에 참가 중이지 않습니다.',
-      flags: MessageFlags.Ephemeral,
-    });
-  }
+  initPlayer(interaction.guild.id);
 
   if (state.queue.length === 0) {
     return interaction.reply({
@@ -48,7 +39,6 @@ async function execute(interaction) {
 
   const [item] = state.queue.splice(targetIndex, 1);
 
-  // Stop current playback without triggering auto-play
   if (state.player.state.status !== AudioPlayerStatus.Idle) {
     state._skipAutoAdvance = true;
     state.player.stop();
@@ -59,6 +49,7 @@ async function execute(interaction) {
       .setColor(0x30D158)
       .setDescription(`▶️ **${item.title}** 재생을 시작합니다.`)],
   });
+  stateBus.emit('notice', interaction.guild.id, `🎧 ${interaction.user.username} · 재생: "${item.title}"`);
   try {
     await playItem(state, item);
   } catch (err) {

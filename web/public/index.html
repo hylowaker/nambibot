@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>nambibot</title>
+  <title>nambibot · Music</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -39,23 +40,24 @@
   <div class="layout">
     <div class="col-main">
 
-      <!-- Now Playing -->
-      <div class="card">
+
+      <div class="card" id="card-now-playing">
         <h2>Now Playing</h2>
         <div class="now-playing-body">
-          <!-- CD icon -->
+
           <div class="cd idle" id="cd-icon">
             <div class="cd-groove"></div>
             <div class="cd-label"></div>
             <div class="cd-hole"></div>
           </div>
-          <!-- Track info + controls -->
+
           <div class="now-playing-info">
             <div id="now-playing-title" class="now-playing-title idle">재생 중인 항목 없음</div>
             <div id="now-playing-sub" class="now-playing-sub" style="display:none"></div>
             <div id="play-progress" class="play-progress" style="display:none">
               <div class="play-progress-bar-track">
                 <div id="play-progress-fill" class="play-progress-fill"></div>
+                <div id="seek-tooltip" class="seek-tooltip" style="display:none"></div>
               </div>
               <div class="play-progress-times">
                 <span id="play-progress-current">0:00</span>
@@ -73,7 +75,7 @@
         </div>
       </div>
 
-      <!-- Queue -->
+
       <div class="card">
         <div class="queue-header">
           <h2>대기열 <span id="queue-count" class="queue-count"></span></h2>
@@ -93,26 +95,27 @@
         </ol>
       </div>
 
-      <!-- Add to queue -->
+
       <div class="card" id="card-add-queue">
         <h2>대기열에 추가</h2>
         <div id="add-queue-hint" class="add-queue-hint" style="display:none"></div>
         <form class="url-form" id="form-queue">
-          <input type="text" id="input-url" placeholder="YouTube URL 또는 플레이리스트 URL" autocomplete="off">
-          <button type="submit" class="btn-primary" id="btn-queue">추가</button>
+          <input type="text" id="input-url" placeholder="🔗 YouTube / SoundCloud URL 또는 플레이리스트 URL" autocomplete="off">
+          <button type="submit" class="btn-secondary" id="btn-queue">대기열 추가</button>
+          <button type="button" class="btn-primary" id="btn-play-now">바로 재생</button>
         </form>
         <div id="queue-progress" class="queue-progress" style="display:none"></div>
       </div>
 
     </div>
 
-    <!-- Right sidebar: voice + history -->
+
     <div class="col-side">
       <div class="card voice-card">
         <h2>음성 채널</h2>
 
         <div class="voice-content">
-          <!-- 연결 중일 때 -->
+
 
           <div id="voice-connected-banner" class="voice-connected-banner" style="display:none">
             <span id="vbanner-icon" class="vbanner-icon">🔊</span>
@@ -120,10 +123,10 @@
             <button class="btn-danger btn-sm" id="btn-leave">퇴장</button>
           </div>
 
-          <!-- 연결 안 됐을 때 -->
+
           <div id="voice-disc-msg" class="voice-disc-msg">연결되지 않음</div>
 
-          <!-- 채널 선택 (선택 즉시 참가) -->
+
           <div class="voice-channel-select-wrap">
             <select id="select-channel" class="voice-channel-select">
               <option value="">채널 선택하여 참가...</option>
@@ -141,6 +144,25 @@
     </div>
   </div>
 
+
+  <button id="fab-listen" class="fab-listen" title="브라우저에서 듣기">
+    <span class="fab-icon">🔇</span>
+  </button>
+  <div id="web-player" class="web-player" style="display:none">
+    <div class="web-player-header">
+      <span class="web-player-title">🎧 브라우저 재생</span>
+      <button id="web-player-close" class="web-player-close">✕</button>
+    </div>
+    <div class="web-player-body">
+      <div id="web-player-track" class="web-player-track">재생 중인 곡 없음</div>
+      <div class="web-player-controls">
+        <input type="range" id="web-player-volume" class="web-player-volume" min="0" max="100" value="50" title="볼륨">
+        <span id="web-player-vol-label" class="web-player-vol-label">50%</span>
+      </div>
+      <div id="web-player-status" class="web-player-status"></div>
+    </div>
+  </div>
+
   <div id="toast-container" class="toast-container"></div>
 
   <div id="offline-overlay">
@@ -152,7 +174,11 @@
     </div>
   </div>
 
+  <div class="page-footer" id="page-footer"></div>
+
 <script src="/socket.io/socket.io.js"></script>
+  <script src="/favicon-util.js"></script>
+  <script src="/crypto-util.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

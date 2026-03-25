@@ -1,11 +1,8 @@
 const { MessageFlags, EmbedBuilder } = require('discord.js');
 const { getState } = require('../../state');
 const { joinToChannel } = require('../../voice');
-/** @typedef {import('discord.js').ChatInputCommandInteraction} ChatInputCommandInteraction */
+const stateBus = require('../../web/stateBus');
 
-/**
- * @param {ChatInputCommandInteraction} interaction
- */
 async function execute(interaction) {
   const state = getState(interaction.guild.id);
   const channelName = interaction.options.getString('channel');
@@ -20,7 +17,8 @@ async function execute(interaction) {
     });
   }
 
-  state.textChannel = interaction.channel;  // TODO 채널 선택 로직 개선
+  state.textChannel = interaction.channel;
+  stateBus.emit('notice', interaction.guild.id, `🎧 ${interaction.user.username} · 음성 채널 참가: ${channel.name}`);
   await interaction.reply({
     embeds: [new EmbedBuilder()
       .setColor(0x30D158)

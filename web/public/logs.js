@@ -16,7 +16,6 @@ const sysinfoBody        = document.getElementById('sysinfo-body');
 const btnSysinfoToggle   = document.getElementById('btn-sysinfo-toggle');
 const btnSysinfoRefresh  = document.getElementById('btn-sysinfo-refresh');
 
-// 시스템 환경 DOM refs
 const si = {
   node:       document.getElementById('si-node'),
   pid:        document.getElementById('si-pid'),
@@ -47,9 +46,8 @@ let uptimeTicker   = null;
 let autoScroll   = true;
 let activeFilter = 'all';
 let searchQuery  = '';
-let allEntries   = []; // { el, level, message }
+let allEntries   = [];
 
-// ── 연결 상태 ──
 socket.on('connect', () => {
   connBadge.textContent = '연결됨';
   connBadge.className = 'ok';
@@ -73,18 +71,19 @@ socket.on('reconnect_attempt', (attempt) => {
   }
 });
 
-// ── 봇 프로필 ──
 socket.on('botProfile', ({ username, avatar }) => {
   logsBotName.textContent = username;
   if (avatar) {
     logsBotAvatar.src = avatar;
     logsBotAvatar.style.display = '';
     logsAvatarFallback.style.display = 'none';
+    setCircleFavicon(avatar);
   }
 });
 
-// ── 로그 수신 ──
-socket.on('logHistory', (entries) => {
+socket.on('logHistory', async (raw) => {
+  const entries = await decryptPayload(raw);
+  if (!entries) return;
   container.innerHTML = '';
   container.appendChild(logsEmpty);
   allEntries = [];
@@ -92,12 +91,13 @@ socket.on('logHistory', (entries) => {
   scrollToBottom();
 });
 
-socket.on('log', (entry) => {
+socket.on('log', async (raw) => {
+  const entry = await decryptPayload(raw);
+  if (!entry) return;
   addEntry(entry);
   if (autoScroll) scrollToBottom();
 });
 
-// ── 엔트리 렌더링 ──
 function addEntry(entry) {
   logsEmpty.style.display = 'none';
 
@@ -125,7 +125,6 @@ function addEntry(entry) {
   updateCount();
 }
 
-// ── 가시성 결정 ──
 function applyVisibility(record) {
   const levelOk  = activeFilter === 'all' || record.level === activeFilter;
   const searchOk = searchQuery === '' || stripAnsi(record.message).toLowerCase().includes(searchQuery);
@@ -146,7 +145,6 @@ function updateCount() {
   logCount.textContent = visible < total ? `${visible} / ${total}개` : `${total}개`;
 }
 
-// ── 검색 ──
 searchInput.addEventListener('input', () => {
   searchQuery = searchInput.value.trim().toLowerCase();
   applyAllVisibility();
@@ -154,7 +152,6 @@ searchInput.addEventListener('input', () => {
   if (autoScroll) scrollToBottom();
 });
 
-// ── 레벨 필터 ──
 document.querySelectorAll('.filter-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
@@ -166,7 +163,6 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
   });
 });
 
-// ── 스크롤 ──
 function scrollToBottom() {
   container.scrollTop = container.scrollHeight;
   scrollBottomBtn.classList.remove('visible');
@@ -188,35 +184,30 @@ scrollBottomBtn.addEventListener('click', () => {
   scrollToBottom();
 });
 
-// ── 시스템 환경 정보 ──
-socket.on('sysInfo', (info) => {
-  // 런타임
+socket.on('sysInfo', async (raw) => {
+  const info = await decryptPayload(raw);
+  if (!info) return;
   si.node.textContent   = info.nodeVersion;
   si.pid.textContent    = info.pid;
   si.env.textContent    = info.nodeEnv;
-  // 프로세스 메모리
   si.rss.textContent      = fmtBytes(info.memRss);
   si.heapUsed.textContent = fmtBytes(info.memHeapUsed);
   si.heapTotal.textContent= fmtBytes(info.memHeapTotal);
   si.external.textContent = fmtBytes(info.memExternal);
-  // 시스템
   si.platform.textContent = info.platform;
   si.arch.textContent     = info.arch;
   si.release.textContent  = info.osRelease;
   si.hostname.textContent = info.hostname;
   si.sysUptime.textContent= fmtDuration(info.sysUptime);
-  // CPU
   si.cpu.textContent    = info.cpu;
   si.cores.textContent  = `${info.cpuCores}코어`;
   const la = info.loadAvg;
   si.loadavg.textContent = la.every(v => v === 0)
     ? 'N/A (Windows)'
     : `${la[0].toFixed(2)} / ${la[1].toFixed(2)} / ${la[2].toFixed(2)}`;
-  // 시스템 메모리
   si.memTotal.textContent = fmtBytes(info.totalMem);
   si.memFree.textContent  = fmtBytes(info.freeMem);
   si.memUsed.textContent  = fmtBytes(info.totalMem - info.freeMem);
-  // 네트워크
   if (info.ips && info.ips.length > 0) {
     si.ips.innerHTML = info.ips
       .map(i => `<span style="display:block">${i.address} <span style="opacity:0.5;font-size:0.65rem">(${i.iface} / ${i.family})</span></span>`)
@@ -224,7 +215,6 @@ socket.on('sysInfo', (info) => {
   } else {
     si.ips.textContent = '없음';
   }
-  // 환경 변수
   if (info.envVars && info.envVars.length > 0) {
     si.envList.innerHTML = info.envVars.map(([k, v]) =>
       `<div class="sysinfo-env-row">` +
@@ -234,7 +224,6 @@ socket.on('sysInfo', (info) => {
       `</div>`
     ).join('');
   }
-  // 업타임 ticker
   processStartTs = info.processStartTs;
   clearInterval(uptimeTicker);
   tickUptime();
@@ -264,7 +253,6 @@ function fmtDuration(secs) {
   return `${s}초`;
 }
 
-// ── 시스템 환경 카드 토글 / 새로고침 ──
 btnSysinfoToggle.addEventListener('click', () => {
   const nowCollapsed = sysinfoBody.classList.toggle('collapsed');
   btnSysinfoToggle.textContent = nowCollapsed ? '▼ 펼치기' : '▲ 접기';
@@ -274,7 +262,6 @@ btnSysinfoRefresh.addEventListener('click', () => {
   socket.emit('cmd:getSysInfo');
 });
 
-// ── 유틸 ──
 function escHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -283,21 +270,20 @@ function stripAnsi(str) {
   return str.replace(/\x1B\[[0-9;]*m/g, '');
 }
 
-// ANSI 색상 코드 → CSS color
 const ANSI_CSS = {
-  '31':   '#e06c75',  // red
-  '32':   '#98c379',  // green
-  '33':   '#e5c07b',  // yellow
-  '34':   '#61afef',  // blue
-  '35':   '#c678dd',  // magenta
-  '36':   '#56b6c2',  // cyan
-  '90':   '#636d83',  // dark gray (DIM)
-  '1;31': '#ef8492',  // bold red
-  '1;32': '#a8d080',  // bold green
-  '1;33': '#e5c07b',  // bold yellow
-  '1;34': '#7ab3e0',  // bold blue
-  '1;35': '#d4a0e8',  // bold magenta
-  '1;36': '#7ab3e0',  // bold cyan
+  '31':   '#e06c75',
+  '32':   '#98c379',
+  '33':   '#e5c07b',
+  '34':   '#61afef',
+  '35':   '#c678dd',
+  '36':   '#56b6c2',
+  '90':   '#636d83',
+  '1;31': '#ef8492',
+  '1;32': '#a8d080',
+  '1;33': '#e5c07b',
+  '1;34': '#7ab3e0',
+  '1;35': '#d4a0e8',
+  '1;36': '#7ab3e0',
 };
 
 function ansiToHtml(text) {
@@ -322,7 +308,6 @@ function highlightMsg(text, query) {
   if (!query) return html;
   const safeQ = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const re = new RegExp(safeQ, 'gi');
-  // HTML 태그 안쪽은 건드리지 않고 텍스트 노드에만 하이라이트 적용
   return html.replace(/<[^>]+>|[^<]+/g, seg =>
     seg.startsWith('<') ? seg : seg.replace(re, m => `<mark class="log-highlight">${m}</mark>`)
   );

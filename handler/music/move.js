@@ -1,23 +1,14 @@
 const { MessageFlags, EmbedBuilder } = require('discord.js');
 const { getState } = require('../../state');
+const { initPlayer } = require('../../player');
 const stateBus = require('../../web/stateBus');
-/** @typedef {import('discord.js').ChatInputCommandInteraction} ChatInputCommandInteraction */
 
-/**
- * @param {ChatInputCommandInteraction} interaction
- */
 async function execute(interaction) {
+  initPlayer(interaction.guild.id);
   const state = getState(interaction.guild.id);
 
-  if (!state.connection) {
-    return interaction.reply({
-      content: '❌ 봇이 음성 채널에 참가 중이지 않습니다.',
-      flags: MessageFlags.Ephemeral,
-    });
-  }
-
-  const from = interaction.options.getInteger('from'); // 1-based
-  const to   = interaction.options.getInteger('to');   // 1-based
+  const from = interaction.options.getInteger('from');
+  const to   = interaction.options.getInteger('to');
   const len  = state.queue.length;
 
   if (len === 0) {
@@ -44,6 +35,7 @@ async function execute(interaction) {
   const [item] = state.queue.splice(from - 1, 1);
   state.queue.splice(to - 1, 0, item);
   stateBus.emit('stateChanged', interaction.guild.id);
+  stateBus.emit('notice', interaction.guild.id, `🎧 ${interaction.user.username} · 순서 변경: "${item.title}" #${from} → #${to}`);
 
   await interaction.reply({
     embeds: [new EmbedBuilder()

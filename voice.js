@@ -3,26 +3,9 @@ const { ChannelType } = require('discord.js');
 const { getState } = require('./state');
 const { initPlayer } = require('./player');
 
-/**
- * 봇을 음성 채널에 연결합니다.
- *
- * 채널 선택 우선순위:
- * 1. `channelName`이 주어진 경우 해당 이름의 채널
- * 2. `member`가 이미 입장해 있는 채널
- * 3. 서버 음성 채널 목록에서 첫번째 채널
- *
- * @param {import('discord.js').Guild} guild - 대상 서버
- * @param {import('discord.js').GuildMember} member - 명령을 실행한 멤버
- * @param {string} [channelName] - 입장할 음성 채널 이름 (생략 시 자동 선택)
- * @returns {Promise<import('discord.js').VoiceChannel>} 연결된 음성 채널
- * @throws {Error} 지정한 이름의 채널을 찾을 수 없을 때
- * @throws {Error} 서버에 음성 채널이 하나도 없을 때
- * @throws {Error} 음성 채널 연결이 10초 내에 Ready 상태가 되지 않을 때
- */
 async function joinToChannel(guild, member, channelName) {
   let channel;
 
-  // Select voice channel to join
   if (channelName) {
     channel = guild.channels.cache.find(
       c => c.type === ChannelType.GuildVoice && c.name === channelName
@@ -44,19 +27,16 @@ async function joinToChannel(guild, member, channelName) {
 
   console.log(`[voice] [${guild.name}] 채널 "${channel.name}" 연결 시도... (멤버 수: ${channel.members.size}명)`);
 
-  // Join the channel
   const connection = joinVoiceChannel({
     channelId: channel.id,
     guildId: guild.id,
     adapterCreator: guild.voiceAdapterCreator,
   });
 
-  // Save connection in state
   const state = getState(guild.id);
   state.connection = connection;
   initPlayer(guild.id);
 
-  // Handle unexpected disconnection (register only once per connection)
   if (!state._disconnectHandlerRegistered) {
     state._disconnectHandlerRegistered = true;
     connection.on(VoiceConnectionStatus.Disconnected, async () => {
@@ -70,18 +50,17 @@ async function joinToChannel(guild, member, channelName) {
         const stateBus = require('./web/stateBus');
         stateBus.emit('stateChanged', state._guildId);
       } catch {
-        console.warn(`[voice] [${guild.name}] 재연결 실패 — 연결 해제`);
+        console.warn(`[voice] [${guild.name}] 재연결 실패 — 음성 연결 해제 (재생 유지)`);
         connection.destroy();
         state.connection = null;
         state.connectedChannelName = null;
-        state.currentItem = null;
+        state._disconnectHandlerRegistered = false;
         const stateBus = require('./web/stateBus');
         stateBus.emit('stateChanged', state._guildId);
       }
     });
   }
 
-  // Wait until ready
   try {
     await entersState(connection, VoiceConnectionStatus.Ready, 10_000);
   } catch {
@@ -92,9 +71,12 @@ async function joinToChannel(guild, member, channelName) {
     throw new Error('음성 채널 연결에 실패했습니다.');
   }
 
-  // Store channel name after confirmed ready
   state.connectedChannelName = channel.name;
   console.log(`[voice] [${guild.name}] 채널 "${channel.name}" 연결 완료`);
+
+  if (state.currentItem && state.player) {
+    connection.subscribe(state.player);
+  }
 
   return channel;
 }

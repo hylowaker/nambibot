@@ -1,10 +1,7 @@
 const { MessageFlags, EmbedBuilder } = require('discord.js');
-const { getState, clearState } = require('../../state');
-/** @typedef {import('discord.js').ChatInputCommandInteraction} ChatInputCommandInteraction */
+const { getState, disconnectVoice } = require('../../state');
+const stateBus = require('../../web/stateBus');
 
-/**
- * @param {ChatInputCommandInteraction} interaction
- */
 async function execute(interaction) {
   const state = getState(interaction.guild.id);
 
@@ -15,9 +12,8 @@ async function execute(interaction) {
     });
   }
 
-  const current = state.currentItem;
-  clearState(state);
-  if (current) state.queue.unshift(current);
+  disconnectVoice(state);
+  stateBus.emit('notice', interaction.guild.id, `🎧 ${interaction.user.username} · 음성 채널 퇴장`);
 
   await interaction.reply({
     embeds: [new EmbedBuilder()

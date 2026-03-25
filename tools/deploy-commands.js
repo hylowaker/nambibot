@@ -4,7 +4,6 @@ require("dotenv").config({ quiet: true });
 
 const devPrefix = (process.env.DEVELOPE_PREFIX === 'ON' || process.env.DEVELOPE_PREFIX === '1') ? 'dev-' : '';
 
-// /music command with subcommands
 const cmdMusic = new SlashCommandBuilder()
   .setName(`${devPrefix}music`)
   .setDescription("음악봇 명령어")
@@ -22,7 +21,7 @@ const cmdMusic = new SlashCommandBuilder()
     )
   )
   .addSubcommand(sub => sub
-    .setName("queue")
+    .setName("add")
     .setDescription("대기열에 항목을 추가합니다.")
     .addStringOption(opt => opt
       .setName("url")
@@ -31,7 +30,7 @@ const cmdMusic = new SlashCommandBuilder()
     )
   )
   .addSubcommand(sub => sub
-    .setName("show")
+    .setName("list")
     .setDescription("현재 재생 중인 음악과 대기열 내용을 출력합니다.")
     .addBooleanOption(opt => opt
       .setName("hidden")
@@ -44,7 +43,7 @@ const cmdMusic = new SlashCommandBuilder()
     .setDescription("현재 재생 중인 항목을 확인합니다.")
   )
   .addSubcommand(sub => sub
-    .setName("delete")
+    .setName("qdel")
     .setDescription("대기열에서 항목을 삭제합니다.")
     .addIntegerOption(opt => opt
       .setName("index")
@@ -54,7 +53,7 @@ const cmdMusic = new SlashCommandBuilder()
     )
   )
   .addSubcommand(sub => sub
-    .setName("purge")
+    .setName("qclear")
     .setDescription("현재 대기열을 전부 삭제합니다.")
   )
   .addSubcommand(sub => sub
@@ -68,8 +67,8 @@ const cmdMusic = new SlashCommandBuilder()
     )
   )
   .addSubcommand(sub => sub
-    .setName("stop")
-    .setDescription("현재 음악 재생을 중단합니다.")
+    .setName("remove")
+    .setDescription("현재 재생 중인 곡을 삭제합니다.")
   )
   .addSubcommand(sub => sub
     .setName("skip")
@@ -88,15 +87,15 @@ const cmdMusic = new SlashCommandBuilder()
     .setDescription("일시정지된 재생을 재개합니다.")
   )
   .addSubcommand(sub => sub
-    .setName("shuffle")
+    .setName("qshuffle")
     .setDescription("대기열 항목을 무작위로 섞습니다.")
   )
   .addSubcommand(sub => sub
-    .setName("dedupe")
+    .setName("qdedupe")
     .setDescription("대기열에서 중복 항목을 제거합니다.")
   )
   .addSubcommand(sub => sub
-    .setName("move")
+    .setName("qmove")
     .setDescription("대기열 항목의 순서를 변경합니다.")
     .addIntegerOption(opt => opt
       .setName("from")
@@ -117,13 +116,11 @@ const cmdMusic = new SlashCommandBuilder()
   )
   .toJSON();
 
-// /version command
 const cmdVersion = new SlashCommandBuilder()
   .setName(`${devPrefix}version`)
   .setDescription("봇 버전 정보를 출력합니다.")
   .toJSON();
 
-// /logs command
 const cmdLogs = new SlashCommandBuilder()
   .setName(`${devPrefix}logs`)
   .setDescription("서버 로그를 확인합니다.")

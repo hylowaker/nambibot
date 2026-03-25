@@ -1,13 +1,10 @@
 const { EmbedBuilder, MessageFlags } = require('discord.js');
 const { getState } = require('../../state');
 const { joinToChannel } = require('../../voice');
-const { playItem } = require('../../player');
+const { playItem, initPlayer } = require('../../player');
 const ytdlp = require('../../ytdlp');
-/** @typedef {import('discord.js').ChatInputCommandInteraction} ChatInputCommandInteraction */
+const stateBus = require('../../web/stateBus');
 
-/**
- * @param {ChatInputCommandInteraction} interaction
- */
 async function execute(interaction) {
   const url = interaction.options.getString('url');
 
@@ -15,20 +12,15 @@ async function execute(interaction) {
 
   const state = getState(interaction.guild.id);
 
-  // Auto-join if not in a channel
+  initPlayer(interaction.guild.id);
+
   if (!state.connection) {
     try {
       await joinToChannel(interaction.guild, interaction.member);
-      state.textChannel = interaction.channel;  // TODO 채널 선택 로직 개선
-    } catch (err) {
-      return interaction.editReply({
-        content: `❌ ${err.message}`,
-        flags: MessageFlags.Ephemeral,
-      });
-    }
+      state.textChannel = interaction.channel;
+    } catch {}
   }
 
-  // Fetch metadata from yt-dlp
   let items;
   try {
     items = await ytdlp.getInfo(url);
@@ -48,10 +40,10 @@ async function execute(interaction) {
   }
 
   await interaction.editReply({ embeds: [embed] });
+  stateBus.emit('notice', interaction.guild.id, `🎧 ${interaction.user.username} · 대기열에 ${items.length}곡 추가`);
 
   if (shouldPlayNow) {
     const item = state.queue.shift();
-    // Poll download progress and update reply
     const pollInterval = setInterval(async () => {
       const pct = state.downloadProgress;
       if (pct != null && state.playStartTs == null) {

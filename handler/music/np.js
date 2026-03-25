@@ -3,11 +3,7 @@ const { AudioPlayerStatus } = require('@discordjs/voice');
 const { getState } = require('../../state');
 const { buildControlRow } = require('./_controls');
 const { fmtTime } = require('./_show');
-/** @typedef {import('discord.js').ChatInputCommandInteraction} ChatInputCommandInteraction */
 
-/**
- * @param {ChatInputCommandInteraction} interaction
- */
 async function execute(interaction) {
   const state = getState(interaction.guild.id);
 

@@ -1,14 +1,4 @@
 #!/usr/bin/env node
-/**
- * .env 파일 AES-256-GCM 암호화/복호화 유틸리티
- *
- * 사용법:
- *   NAMBI_PASSPHRASE="..." node env-crypto.js encrypt < .env > .env.enc
- *   NAMBI_PASSPHRASE="..." node env-crypto.js decrypt < .env.enc
- *
- * 파일 포맷 (바이너리, base64 인코딩):
- *   salt(16) | iv(12) | authTag(16) | ciphertext(N)
- */
 'use strict';
 
 const crypto = require('crypto');
@@ -35,7 +25,6 @@ function encrypt(plaintext, passphrase) {
   const body = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
   const tag  = cipher.getAuthTag();
 
-  // salt | iv | tag | ciphertext → base64
   return Buffer.concat([salt, iv, tag, body]).toString('base64');
 }
 
@@ -53,7 +42,6 @@ function decrypt(encoded, passphrase) {
   return decipher.update(body, undefined, 'utf8') + decipher.final('utf8');
 }
 
-// ── CLI 진입점 ──────────────────────────────────────────────
 const [,, cmd] = process.argv;
 const passphrase = process.env.NAMBI_PASSPHRASE || '';
 

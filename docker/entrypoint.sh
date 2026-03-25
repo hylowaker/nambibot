@@ -1,7 +1,6 @@
 #!/bin/bash
 set -e
 
-# ── 색상 ──────────────────────────────────────────────────
 R='\033[0m'
 DIM='\033[90m'
 BCYAN='\033[1;36m'
@@ -19,7 +18,6 @@ err()  { printf "${DIM}$(ts)${R}  ${BRED}ERROR${R}  $*\n" >&2; }
 
 cd /app
 
-# ── 로고 ──────────────────────────────────────────────────
 _ver=$(grep '"version"' /app/package.json 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)
 _sub="Discord Music Bot  v${_ver}"
 _pad=$(printf '%*s' $((68 - ${#_sub})) '')
@@ -43,10 +41,9 @@ ENC_FILE="$NAMBI_DIR/.env.enc"
 log "데이터 디렉토리: ${SILVER}${NAMBI_DIR}${R}"
 mkdir -p "$NAMBI_DIR"
 
-# ── 설정 파일 로드 ────────────────────────────────────────
 if [ ! -f "$ENC_FILE" ] || [ ! -s "$ENC_FILE" ]; then
   warn "설정 파일 없음 — 대화형 설정 시작"
-  NAMBI_DIR="$NAMBI_DIR" bash scripts/setup-env.sh
+  NAMBI_DIR="$NAMBI_DIR" bash tools/setup-env.sh
 
   if [ ! -f "$ENC_FILE" ] || [ ! -s "$ENC_FILE" ]; then
     err "설정 파일 생성에 실패했습니다."
@@ -54,7 +51,6 @@ if [ ! -f "$ENC_FILE" ] || [ ! -s "$ENC_FILE" ]; then
   fi
 fi
 
-# 암호화된 .env.enc 복호화
 log "설정 파일 복호화 중: ${SILVER}${ENC_FILE}${R}"
 PASS_FILE="$NAMBI_DIR/.passphrase"
 if [ -z "$NAMBI_PASSPHRASE" ] && [ -f "$PASS_FILE" ] && [ -s "$PASS_FILE" ]; then
@@ -62,19 +58,18 @@ if [ -z "$NAMBI_PASSPHRASE" ] && [ -f "$PASS_FILE" ] && [ -s "$PASS_FILE" ]; the
   log "패스프레이즈: ${SILVER}${PASS_FILE}${R}"
 elif [ -z "$NAMBI_PASSPHRASE" ]; then
   err "NAMBI_PASSPHRASE 환경변수가 설정되지 않았습니다."
-  err "scripts/setup-env.sh 실행 시 생성된 ${PASS_FILE} 파일이 있는지 확인하거나,"
+  err "tools/setup-env.sh 실행 시 생성된 ${PASS_FILE} 파일이 있는지 확인하거나,"
   err "docker run -e NAMBI_PASSPHRASE='...' 형식으로 직접 전달해주세요."
   exit 1
 fi
 
-DECRYPTED=$(NAMBI_PASSPHRASE="$NAMBI_PASSPHRASE" node /app/scripts/env-crypto.js decrypt < "$ENC_FILE" 2>/dev/null) || {
+DECRYPTED=$(NAMBI_PASSPHRASE="$NAMBI_PASSPHRASE" node /app/tools/env-crypto.js decrypt < "$ENC_FILE" 2>/dev/null) || {
   err "복호화 실패: 잘못된 패스프레이즈이거나 파일이 손상되었습니다."
   exit 1
 }
 export $(echo "$DECRYPTED" | grep -v '^#' | grep -v '^$' | xargs)
 ok "복호화 완료"
 
-# 필수 환경변수 검증
 REQUIRED_KEYS="DISCORD_TOKEN APPLICATION_ID GUILD_ID"
 invalid=""
 for key in $REQUIRED_KEYS; do
@@ -91,10 +86,9 @@ fi
 
 ok "환경변수 검증 완료  ${SILVER}WEB_PORT=${WEB_PORT:-3000}${R}"
 
-# 슬래시 명령어 등록
 log "슬래시 명령어 등록 중..."
 set +e
-node scripts/deploy-commands.js
+node tools/deploy-commands.js
 DEPLOY_EXIT=$?
 set -e
 if [ "$DEPLOY_EXIT" -eq 0 ]; then
@@ -107,6 +101,31 @@ elif [ "$DEPLOY_EXIT" -eq 2 ]; then
 else
   err "슬래시 커맨드 등록 실패 — 설정을 확인하고 다시 배포해주세요"
   exit 1
+fi
+
+if python3 -c "import yt_dlp_ejs" 2>/dev/null; then
+  ok "yt-dlp-ejs 설치 확인됨"
+else
+  warn "yt-dlp-ejs 미설치 — YouTube JS 서명 처리 불가, 일부 영상 재생 실패 가능"
+  warn "설치 명령: pip3 install yt-dlp-ejs"
+fi
+
+_ytdlp_cur=$(yt-dlp --version 2>/dev/null | tr -d '[:space:]')
+_ytdlp_latest=""
+if command -v curl > /dev/null 2>&1; then
+  _ytdlp_latest=$(curl -s --connect-timeout 3 --max-time 4 \
+    -H "User-Agent: nambibot" \
+    "https://api.github.com/repos/yt-dlp/yt-dlp-nightly-builds/releases/latest" \
+    2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('tag_name',''))" 2>/dev/null | tr -d '[:space:]')
+fi
+if [ -z "$_ytdlp_latest" ]; then
+  warn "yt-dlp 최신 nightly 버전 확인 실패 (네트워크 오류) — 건너뜁니다."
+elif [ "$_ytdlp_cur" = "$_ytdlp_latest" ]; then
+  ok "yt-dlp 최신 nightly 버전 확인됨  ${SILVER}${_ytdlp_cur}${R}"
+else
+  warn "yt-dlp 업데이트 필요  현재: ${_ytdlp_cur}  →  최신 nightly: ${_ytdlp_latest}"
+  warn "오래된 버전은 일부 사이트에서 다운로드 오류를 유발할 수 있습니다."
+  warn "업데이트 명령: yt-dlp -U --update-to nightly"
 fi
 
 echo ""
