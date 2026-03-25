@@ -21,6 +21,10 @@
 YouTube, SoundCloud 등의 URL을 Discord 음성 채널이나 웹 브라우저에서 재생하는 봇.
 Web UI로 대기열 관리, 타임라인 탐색, 브라우저 직접 청취가 가능.
 
+<kbd>
+<img width="1939" height="1190" alt="image" src="https://github.com/user-attachments/assets/cf1ada82-7813-4bd2-bb7e-4c7db2756aea" style="border: 20px solid black;" />
+</kbd>
+
 ---
 
 ## Quick Start
