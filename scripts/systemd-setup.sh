@@ -171,6 +171,15 @@ if [ ! -d node_modules ]; then
   ok "패키지 설치 완료"
 fi
 
+_missing_npm=""
+node -e "require('terser')" 2>/dev/null || _missing_npm="${_missing_npm} terser"
+node -e "require('html-minifier-terser')" 2>/dev/null || _missing_npm="${_missing_npm} html-minifier-terser"
+if [ -n "$_missing_npm" ]; then
+  warn "JS/HTML 난독화 패키지 미설치:${CYAN}${_missing_npm}${R}"
+  warn "설치 명령: npm install${_missing_npm}"
+  warn "미설치 시 코드가 minify 없이 원본 그대로 제공됩니다."
+fi
+
 if [ ! -f "$NAMBI_DIR/.commands-deployed" ]; then
   log "슬래시 명령어 등록 중..."
   set +e

@@ -14,15 +14,14 @@ function ytThumb(url) {
   return m ? `https://i.ytimg.com/vi/${m[1]}/hqdefault.jpg` : null;
 }
 
-function getInfo(url, onProgress) {
+function _fetchInfo(url, useFlat, onProgress) {
   return new Promise((resolve, reject) => {
-    const proc = spawn(YTDLP_BIN, [
-      '--simulate',
-      '--flat-playlist',
-      '--no-warnings',
+    const args = ['--simulate', '--no-warnings',
       '--print', '%(playlist_count)s\t%(title)s\t%(webpage_url)s\t%(uploader)s\t%(duration)s\t%(thumbnail)s',
-      url,
-    ]);
+      url];
+    if (useFlat) args.splice(1, 0, '--flat-playlist');
+
+    const proc = spawn(YTDLP_BIN, args);
 
     const items = [];
     let total = null;
@@ -41,8 +40,8 @@ function getInfo(url, onProgress) {
         const title = (parts[1] || line).slice(0, 200);
         const itemUrl = parts[2] || url;
         const uploader = (parts[3] && parts[3] !== 'NA') ? parts[3].trim().slice(0, 100) : null;
-        const durationRaw = parseInt(parts[4], 10);
-        const duration = (!isNaN(durationRaw) && durationRaw > 0) ? durationRaw : null;
+        const durationRaw = parseFloat(parts[4]);
+        const duration = (!isNaN(durationRaw) && durationRaw > 0) ? Math.round(durationRaw) : null;
         let thumbnail = (parts[5] && parts[5] !== 'NA' && parts[5].startsWith('http')) ? parts[5].trim() : null;
         if (!thumbnail) thumbnail = ytThumb(itemUrl);
         const item = { title, url: itemUrl, uploader, duration, thumbnail };
@@ -63,6 +62,18 @@ function getInfo(url, onProgress) {
       resolve(items);
     });
   });
+}
+
+async function getInfo(url, onProgress) {
+  const items = await _fetchInfo(url, true, null);
+  const hasNA = items.some(it => it.title === 'NA');
+  if (hasNA && items.length > 0) {
+    return _fetchInfo(url, false, onProgress);
+  }
+  if (onProgress) {
+    items.forEach((item, i) => onProgress(i + 1, items.length, item));
+  }
+  return items;
 }
 
 const NOISE = ['BrokenPipeError', 'Broken pipe', 'Exception ignored', 'Error writing', 'pipe:1: Broken'];
@@ -88,7 +99,7 @@ function createAudioFile(url, onProgress) {
       '-loglevel', 'error',
       '-i', 'pipe:0',
       '-vn',
-      '-af', 'loudnorm=I=-14:TP=-1:LRA=11',
+      '-af', 'loudnorm=I=-14:TP=-1:LRA=11,afade=t=in:d=3',
       '-ar', '48000',
       '-ac', '2',
       '-c:a', 'libopus',

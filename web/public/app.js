@@ -319,9 +319,9 @@ function updateProgressBar() {
     playProgressFill.classList.remove('indeterminate');
     playProgressDur.textContent = fmtTime(dur);
   } else {
-    playProgressFill.classList.add('indeterminate');
-    playProgressFill.style.width = '35%';
-    _prevProgressWidth = '35%';
+    playProgressFill.classList.remove('indeterminate');
+    playProgressFill.style.width = '100%';
+    _prevProgressWidth = '100%';
     playProgressDur.textContent = '';
   }
 }
@@ -755,7 +755,33 @@ function resetQueueBtn() {
   btnQueue.textContent = '대기열 추가';
 }
 
-socket.on('notice',   ({ message }) => showToast(message, 'notice'));
+let _notifAudioCtx = null;
+function playNotifSound() {
+  if (!webListenActive) return;
+  try {
+    if (!_notifAudioCtx) _notifAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = _notifAudioCtx;
+    const now = ctx.currentTime;
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc1.type = 'sine';
+    osc2.type = 'sine';
+    osc1.frequency.setValueAtTime(1047, now);
+    osc2.frequency.setValueAtTime(1319, now);
+    gain.gain.setValueAtTime(0.15, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(ctx.destination);
+    osc1.start(now);
+    osc2.start(now + 0.06);
+    osc1.stop(now + 0.08);
+    osc2.stop(now + 0.15);
+  } catch {}
+}
+
+socket.on('notice', ({ message }) => { showToast(message, 'notice'); playNotifSound(); });
 socket.on('cmdError', ({ message }) => {
   showToast(message, 'error');
   resetQueueBtn();

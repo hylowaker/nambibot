@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 140">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0e1a"/>
+      <stop offset="100%" stop-color="#111830"/>
+    </linearGradient>
+    <linearGradient id="text-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#6080ff"/>
+      <stop offset="50%" stop-color="#a855f7"/>
+      <stop offset="100%" stop-color="#6080ff"/>
+    </linearGradient>
+    <linearGradient id="disc-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6080ff"/>
+      <stop offset="100%" stop-color="#a855f7"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <rect width="600" height="140" rx="16" fill="url(#bg)"/>
+  <rect width="600" height="140" rx="16" fill="none" stroke="rgba(96,128,255,0.2)" stroke-width="1"/>
+
+  <!-- CD disc icon -->
+  <circle cx="80" cy="70" r="38" fill="none" stroke="url(#disc-grad)" stroke-width="2.5" opacity="0.8"/>
+  <circle cx="80" cy="70" r="24" fill="none" stroke="rgba(96,128,255,0.15)" stroke-width="1"/>
+  <circle cx="80" cy="70" r="14" fill="url(#disc-grad)" opacity="0.7"/>
+  <circle cx="80" cy="70" r="5" fill="#0a0e1a"/>
+  <!-- Music note on disc -->
+  <rect x="86" y="48" width="2.5" height="16" rx="1.2" fill="white" opacity="0.9"/>
+  <circle cx="84" cy="64" r="4" fill="white" opacity="0.9"/>
+  <path d="M88.5 48 Q93 46 93 51 L88.5 49.5Z" fill="white" opacity="0.85"/>
+
+  <!-- NAMBIBOT text -->
+  <text x="140" y="82" font-family="'SF Pro Display', 'Segoe UI', system-ui, -apple-system, sans-serif" font-size="52" font-weight="800" letter-spacing="4" fill="url(#text-grad)" filter="url(#glow)">NAMBIBOT</text>
+
+  <!-- Subtitle -->
+  <text x="142" y="108" font-family="'SF Pro Display', 'Segoe UI', system-ui, sans-serif" font-size="13" font-weight="400" letter-spacing="3" fill="rgba(255,255,255,0.35)">DISCORD MUSIC BOT</text>
+
+  <!-- Decorative dots -->
+  <circle cx="540" cy="30" r="2" fill="rgba(96,128,255,0.3)"/>
+  <circle cx="555" cy="45" r="1.5" fill="rgba(168,85,247,0.25)"/>
+  <circle cx="565" cy="25" r="1" fill="rgba(96,128,255,0.2)"/>
+</svg>

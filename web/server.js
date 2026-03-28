@@ -308,7 +308,7 @@ function start(client) {
   });
 
   stateBus.on('notice', (guildId, message) => {
-    io.to(guildId).emit('notice', { message });
+    if (message) io.to(guildId).emit('notice', { message });
   });
 
   stateBus.on('uiAction', (guildId, action) => {
@@ -367,6 +367,7 @@ function start(client) {
 
     function broadcast(guildId, message, uiAction) {
       io.to(guildId).emit('notice', { message: `🎧 ${rawIp || '?'} · ${message}` });
+      stateBus.emit('notice', guildId);
       if (uiAction) io.to(guildId).emit('uiAction', { action: uiAction });
     }
 

@@ -1,9 +1,11 @@
 require('./web/logInterceptor');
 const { Client, Events, GatewayIntentBits, MessageFlags, EmbedBuilder, ActivityType } = require('discord.js');
-const { AudioPlayerStatus } = require('@discordjs/voice');
+const { createAudioResource, createAudioPlayer, StreamType, AudioPlayerStatus, NoSubscriberBehavior } = require('@discordjs/voice');
 require('dotenv').config();
 const fs   = require('fs');
 const path = require('path');
+const os   = require('os');
+const { spawn } = require('child_process');
 const { getState, getAllStates, clearState } = require('./state');
 const stateBus = require('./web/stateBus');
 const persistence = require('./persistence');
@@ -110,6 +112,9 @@ client.once(Events.ClientReady, async () => {
   stateBus.on('stateChanged', schedulePresenceUpdate);
   stateBus.on('presenceUpdate', schedulePresenceUpdate);
   updatePresence();
+
+  generateNotifSound();
+  stateBus.on('notice', (guildId) => playNotifInVoice(guildId));
 
   console.log('[boot] 초기화 완료');
 });
@@ -285,6 +290,70 @@ process.on('unhandledRejection', (reason) => {
   }
   console.error('[process] 처리되지 않은 Promise 거부:', reason?.message ?? reason);
 });
+
+const NOTIF_OGG_PATH = path.join(os.tmpdir(), 'nambibot-notif.ogg');
+const FFMPEG_BIN = process.env.FFMPEG_BIN || 'ffmpeg';
+
+function generateNotifSound() {
+  try {
+    if (fs.existsSync(NOTIF_OGG_PATH)) return;
+    const { execSync } = require('child_process');
+    const sampleRate = 48000;
+    const duration = 0.3;
+    const samples = Math.floor(sampleRate * duration);
+    const buf = Buffer.alloc(44 + samples * 2);
+    buf.write('RIFF', 0); buf.writeUInt32LE(36 + samples * 2, 4);
+    buf.write('WAVE', 8); buf.write('fmt ', 12); buf.writeUInt32LE(16, 16);
+    buf.writeUInt16LE(1, 20); buf.writeUInt16LE(1, 22);
+    buf.writeUInt32LE(sampleRate, 24); buf.writeUInt32LE(sampleRate * 2, 28);
+    buf.writeUInt16LE(2, 32); buf.writeUInt16LE(16, 34);
+    buf.write('data', 36); buf.writeUInt32LE(samples * 2, 40);
+    for (let i = 0; i < samples; i++) {
+      const t = i / sampleRate;
+      const env = Math.exp(-t * 25);
+      const freq = t < 0.07 ? 1047 : 1319;
+      const val = Math.sin(2 * Math.PI * freq * t) * env;
+      buf.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(val * 32767))), 44 + i * 2);
+    }
+    const wavPath = NOTIF_OGG_PATH + '.wav';
+    fs.writeFileSync(wavPath, buf);
+    execSync(`${FFMPEG_BIN} -y -i "${wavPath}" -af "volume=3" -c:a libopus -b:a 128k -ar 48000 -f ogg "${NOTIF_OGG_PATH}" 2>/dev/null`);
+    fs.unlinkSync(wavPath);
+    console.log('[boot] 알림음 생성 완료');
+  } catch (e) {
+    console.warn('[boot] 알림음 생성 실패:', e.message);
+  }
+}
+
+let _notifCooldown = 0;
+function playNotifInVoice(guildId) {
+  const now = Date.now();
+  if (now - _notifCooldown < 800) return;
+  _notifCooldown = now;
+
+  if (!fs.existsSync(NOTIF_OGG_PATH)) { console.warn('[notif] 알림음 파일 없음'); return; }
+  const state = getState(guildId);
+  if (!state.connection) return;
+
+  console.log(`[notif] 알림음 재생: ${guildId}`);
+  const notifPlayer = createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Stop } });
+  const stream = fs.createReadStream(NOTIF_OGG_PATH);
+  const resource = createAudioResource(stream, { inputType: StreamType.OggOpus });
+
+  state.connection.subscribe(notifPlayer);
+  notifPlayer.play(resource);
+
+  let restored = false;
+  function restore() {
+    if (restored) return;
+    restored = true;
+    if (state.connection) state.connection.subscribe(state.player);
+    notifPlayer.stop();
+  }
+
+  notifPlayer.on(AudioPlayerStatus.Idle, restore);
+  setTimeout(restore, 800);
+}
 
 async function shutdown(signal) {
   console.log(`[process] 종료 신호 수신: ${signal}`);

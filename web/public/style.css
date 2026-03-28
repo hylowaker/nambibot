@@ -417,6 +417,12 @@ select {
 .now-playing-title {
   margin-bottom: 12px;
   min-height: 1.5em;
+  overflow: hidden;
+}
+.now-playing-title .track-url {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .now-playing-title.idle { color: var(--text-muted); font-weight: 400; }
 .now-playing-title .track-title {
@@ -1355,9 +1361,10 @@ button:disabled:hover      { opacity: 0.35; }
 @media (max-width: 640px) {
   body { padding: 12px; }
 
-  .cd        { width: 80px; height: 80px; }
-  .cd-label  { width: 30px; height: 30px; }
-  .cd-hole   { width: 9px;  height: 9px; }
+  .cd        { width: 110px; height: 110px; }
+  .cd-label  { width: 42px; height: 42px; }
+  .cd-hole   { width: 11px; height: 11px; }
+  .cd-groove { inset: 12px; }
   .cd-groove { inset: 10px; }
 
   .queue-header-actions { gap: 4px; }
@@ -1430,12 +1437,12 @@ button:disabled:hover      { opacity: 0.35; }
     animation: npGlowMobile 6s linear infinite;
   }
   @keyframes npGlowMobile {
-    0%, 100% { box-shadow: var(--glass-shadow), var(--glass-hi), 0 0 12px rgba(255,50,50,0.12); }
-    16%      { box-shadow: var(--glass-shadow), var(--glass-hi), 0 0 12px rgba(255,160,0,0.12); }
-    33%      { box-shadow: var(--glass-shadow), var(--glass-hi), 0 0 12px rgba(100,255,50,0.12); }
-    50%      { box-shadow: var(--glass-shadow), var(--glass-hi), 0 0 12px rgba(0,200,255,0.12); }
-    66%      { box-shadow: var(--glass-shadow), var(--glass-hi), 0 0 12px rgba(80,80,255,0.12); }
-    83%      { box-shadow: var(--glass-shadow), var(--glass-hi), 0 0 12px rgba(200,0,255,0.12); }
+    0%, 100% { box-shadow: var(--glass-shadow), var(--glass-hi), 0 0 15px rgba(255,50,50,0.20), 0 0 30px rgba(255,50,50,0.08); }
+    16%      { box-shadow: var(--glass-shadow), var(--glass-hi), 0 0 15px rgba(255,160,0,0.20), 0 0 30px rgba(255,160,0,0.08); }
+    33%      { box-shadow: var(--glass-shadow), var(--glass-hi), 0 0 15px rgba(100,255,50,0.20), 0 0 30px rgba(100,255,50,0.08); }
+    50%      { box-shadow: var(--glass-shadow), var(--glass-hi), 0 0 15px rgba(0,200,255,0.20), 0 0 30px rgba(0,200,255,0.08); }
+    66%      { box-shadow: var(--glass-shadow), var(--glass-hi), 0 0 15px rgba(80,80,255,0.20), 0 0 30px rgba(80,80,255,0.08); }
+    83%      { box-shadow: var(--glass-shadow), var(--glass-hi), 0 0 15px rgba(200,0,255,0.20), 0 0 30px rgba(200,0,255,0.08); }
   }
   #card-now-playing.np-paused {
     box-shadow: var(--glass-shadow), var(--glass-hi), 0 0 10px rgba(255,200,50,0.06);
