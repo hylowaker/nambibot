@@ -198,16 +198,11 @@ async function handleMusicButton(interaction) {
       if (state.queue.length === 0) {
         return interaction.reply({ content: '❌ 대기열이 비어있습니다.', flags: MessageFlags.Ephemeral });
       }
-      if (!state.playStartTs) {
-        return interaction.reply({ content: '⏳ 현재 곡을 불러오는 중입니다.', flags: MessageFlags.Ephemeral });
-      }
       const current = state.currentItem;
       const item    = state.queue.shift();
       if (current) state.queue.push(current);
-      if (state.player.state.status !== AudioPlayerStatus.Idle) {
-        state._skipAutoAdvance = true;
-        state.player.stop();
-      }
+      state._skipAutoAdvance = true;
+      state.player.stop();
       const skipEmbed = new EmbedBuilder().setColor(0x6080FF).setDescription(`⏭️ **${item.title}** 재생 중...`);
       if (current) skipEmbed.setFooter({ text: `건너뜀: ${current.title} → 대기열 맨 뒤로` });
       await interaction.reply({ embeds: [skipEmbed], flags: MessageFlags.Ephemeral });

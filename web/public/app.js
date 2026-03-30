@@ -118,7 +118,7 @@ socket.on('botProfile', ({ username, avatar }) => {
 socket.on('buildInfo', ({ version, build }) => {
   const footer = document.getElementById('page-footer');
   if (footer) {
-    footer.textContent = `nambibot v${version}${build ? '  ·  ' + build : ''}`;
+    footer.textContent = `nambibot v${version}${build ? '  ·  (build date: ' + build + ')' : ''}`;
   }
 });
 
@@ -298,9 +298,10 @@ playProgressTrack.addEventListener('click', (e) => {
 
 function updateProgressBar() {
   if (!currentPlayStartTs) return;
-  const elapsed = currentIsPaused
+  let elapsed = currentIsPaused
     ? pausedElapsed
     : (Date.now() - currentPlayStartTs - currentPausedDuration) / 1000;
+  if (elapsed < 0) elapsed = 0;
   const dur = currentDuration;
 
   const curText = fmtTime(elapsed);
@@ -346,13 +347,14 @@ function renderState(state) {
 
   const curUrl = state.currentItem?.url ?? null;
   isLoading = isPlaying && !state.playStartTs;
-  if (_prevTrackUrl !== undefined && curUrl && curUrl !== _prevTrackUrl && !isLoading) {
-    const npBody = document.querySelector('.now-playing-body');
-    npBody.classList.remove('np-transition');
+  const npBody = document.querySelector('.now-playing-body');
+  const hadExitAnim = npBody.classList.contains('np-skip') || npBody.classList.contains('np-delete');
+  if (hadExitAnim || (_prevTrackUrl !== undefined && curUrl !== _prevTrackUrl && !isLoading)) {
+    npBody.classList.remove('np-skip', 'np-delete', 'np-transition');
     void npBody.offsetWidth;
     npBody.classList.add('np-transition');
   }
-  if (!isLoading) _prevTrackUrl = curUrl;
+  _prevTrackUrl = curUrl;
 
   if (state.currentItem) {
     if (_prevNpUrl !== state.currentItem.url) {
@@ -374,9 +376,10 @@ function renderState(state) {
 
     if (state.currentItem.uploader) {
       nowPlayingSub.textContent = '🎤 ' + state.currentItem.uploader;
-      nowPlayingSub.style.display = '';
+      nowPlayingSub.style.visibility = 'visible';
     } else {
-      nowPlayingSub.style.display = 'none';
+      nowPlayingSub.innerHTML = '&nbsp;';
+      nowPlayingSub.style.visibility = 'hidden';
     }
 
     currentPlayStartTs    = state.playStartTs;
@@ -403,21 +406,32 @@ function renderState(state) {
       playProgressTrack.classList.remove('downloading');
       stopProgressTimer();
     } else {
+      const wasDownloading = playProgressFill.classList.contains('downloading');
       playProgressFill.classList.remove('downloading', 'paused', 'indeterminate');
       playProgressFill.classList.add('playing');
       playProgressTrack.classList.remove('downloading');
+      if (wasDownloading) {
+        playProgressFill.style.transition = 'none';
+        playProgressFill.style.width = '0%';
+        requestAnimationFrame(() => { playProgressFill.style.transition = ''; });
+      }
       startProgressTimer();
     }
-    playProgress.style.display = '';
+    playProgress.style.visibility = 'visible';
     playProgressTrack.classList.toggle('seekable', !!state.playStartTs && !!currentDuration);
 
   } else {
     _prevNpUrl = undefined;
-    nowPlayingTitle.innerHTML = '재생 중인 항목 없음';
+    nowPlayingTitle.innerHTML = `
+      <div class="track-title">재생 중인 항목 없음</div>
+      <span class="track-url" style="visibility:hidden">&nbsp;</span>
+    `;
     nowPlayingTitle.classList.add('idle');
-    nowPlayingSub.style.display = 'none';
+    nowPlayingSub.style.visibility = 'hidden';
+    nowPlayingSub.style.display = '';
+    if (!nowPlayingSub.textContent) nowPlayingSub.innerHTML = '&nbsp;';
     document.querySelector('.cd-label').innerHTML = '';
-    playProgress.style.display = 'none';
+    playProgress.style.visibility = 'hidden';
     playProgressFill.classList.remove('downloading', 'playing', 'paused');
     playProgressTrack.classList.remove('downloading');
     stopProgressTimer();
@@ -433,20 +447,20 @@ function renderState(state) {
 
   const showListenHint = isPlaying && !state.connected && !webListenActive;
   if (showListenHint) {
-    nowPlayingHint.innerHTML = '음성 채널 연결 없이도 <button class="hint-fab-btn" id="hint-fab-trigger">🔊</button> 버튼으로 브라우저에서 바로 들을 수 있어요';
-    nowPlayingHint.style.display = '';
+    nowPlayingHint.innerHTML = '음성 채널 연결 없이도 우측 하단 <button class="hint-fab-btn" id="hint-fab-trigger"><svg viewBox="0.5 9 31 16" fill="none" width="14" height="9" style="vertical-align:0px;display:inline-block"><path d="M3 17 C3 6.5,29 6.5,29 17" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><rect x="0.5" y="15.5" width="5" height="8.5" rx="2" fill="currentColor" opacity="0.5"/><rect x="26.5" y="15.5" width="5" height="8.5" rx="2" fill="currentColor" opacity="0.5"/><rect x="7.5" y="13.5" width="17" height="12" rx="2.5" stroke="currentColor" stroke-width="1.3" fill="none"/><line x1="10.5" y1="17" x2="21.5" y2="17" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.3"/><circle cx="10.5" cy="17" r="1" fill="currentColor" opacity="0.5"/></svg></button> 버튼으로 브라우저에서 바로 들을 수 있어요';
+    nowPlayingHint.style.visibility = 'visible';
     const hintBtn = document.getElementById('hint-fab-trigger');
     if (hintBtn) hintBtn.addEventListener('click', () => { if (!webListenActive) startWebListen(); }, { once: true });
   } else {
-    nowPlayingHint.style.display = 'none';
+    nowPlayingHint.style.visibility = 'hidden';
   }
 
-  btnPause.style.display  = (isPlaying && !isPaused) ? '' : 'none';
-  btnResume.style.display = (isPlaying && isPaused)  ? '' : 'none';
+  const controlsWrap = btnPause.parentElement;
+  controlsWrap.style.visibility = isPlaying ? 'visible' : 'hidden';
+  btnPause.style.display  = (!isPaused) ? '' : 'none';
+  btnResume.style.display = (isPaused)  ? '' : 'none';
   btnPause.disabled   = isLoading;
   btnResume.disabled  = isLoading;
-  btnSkip.style.display          = isPlaying ? '' : 'none';
-  btnDeleteCurrent.style.display = isPlaying ? '' : 'none';
   btnSkip.disabled        = isLoading;
   btnDeleteCurrent.disabled = isLoading;
 
@@ -626,7 +640,6 @@ function triggerNpAnim(cls) {
   npBody.classList.remove('np-skip', 'np-delete', 'np-transition');
   void npBody.offsetWidth;
   npBody.classList.add(cls);
-  npBody.addEventListener('animationend', () => npBody.classList.remove(cls), { once: true });
 }
 
 btnPause.addEventListener('click',         () => emit('cmd:pause'));
@@ -1026,7 +1039,7 @@ function highlight(text, query) {
 
 const fabListen       = document.getElementById('fab-listen');
 const webPlayerPanel  = document.getElementById('web-player');
-const webPlayerClose  = document.getElementById('web-player-close');
+const webPlayerClose  = document.getElementById('web-player-close') || {};
 const webPlayerTrack  = document.getElementById('web-player-track');
 const webPlayerVolume = document.getElementById('web-player-volume');
 const webPlayerVolLbl = document.getElementById('web-player-vol-label');
@@ -1035,8 +1048,8 @@ const webPlayerStatus = document.getElementById('web-player-status');
 let webAudio = null;
 let webListenActive = false;
 let webListenTrackUrl = null;
+let _webListenTitle = null;
 let webListenHasAudio = false;
-let _webLastPlayStartTs = null;
 
 const savedVol = localStorage.getItem('nambibot_webvol');
 if (savedVol !== null) {
@@ -1044,6 +1057,37 @@ if (savedVol !== null) {
   webPlayerVolume.value = vol;
   webPlayerVolLbl.textContent = vol + '%';
 }
+
+let _webPlayerHideTimer = null;
+const WEB_PLAYER_AUTO_HIDE_MS = 3000;
+
+function _showWebPlayerPanel() {
+  clearTimeout(_webPlayerHideTimer);
+  _webPlayerHideTimer = null;
+  webPlayerPanel.classList.add('visible');
+}
+
+function _scheduleHideWebPlayer() {
+  clearTimeout(_webPlayerHideTimer);
+  _webPlayerHideTimer = setTimeout(() => {
+    if (!webListenActive) return;
+    webPlayerPanel.classList.remove('visible');
+    _webPlayerHideTimer = null;
+  }, WEB_PLAYER_AUTO_HIDE_MS);
+}
+
+fabListen.addEventListener('mouseenter', () => {
+  if (webListenActive) _showWebPlayerPanel();
+});
+fabListen.addEventListener('mouseleave', () => {
+  if (webListenActive) _scheduleHideWebPlayer();
+});
+webPlayerPanel.addEventListener('mouseenter', () => {
+  if (webListenActive) _showWebPlayerPanel();
+});
+webPlayerPanel.addEventListener('mouseleave', () => {
+  if (webListenActive) _scheduleHideWebPlayer();
+});
 
 fabListen.addEventListener('click', () => {
   if (_webPlayBlocked) {
@@ -1057,7 +1101,7 @@ fabListen.addEventListener('click', () => {
   }
 });
 
-webPlayerClose.addEventListener('click', stopWebListen);
+if (webPlayerClose.addEventListener) webPlayerClose.addEventListener('click', stopWebListen);
 
 webPlayerPanel.addEventListener('click', (e) => {
   if (_webPlayBlocked && !e.target.closest('.web-player-close')) {
@@ -1075,18 +1119,19 @@ webPlayerVolume.addEventListener('input', () => {
 function startWebListen() {
   webListenActive = true;
   fabListen.classList.add('active');
-  fabListen.querySelector('.fab-icon').textContent = '🔊';
-  webPlayerPanel.style.display = '';
+  _showWebPlayerPanel();
+  _scheduleHideWebPlayer();
   localStorage.setItem('nambibot_weblisten', '1');
-  nowPlayingHint.style.display = 'none';
+  nowPlayingHint.style.visibility = 'hidden';
   syncWebAudio();
 }
 
 function stopWebListen() {
   webListenActive = false;
   fabListen.classList.remove('active');
-  fabListen.querySelector('.fab-icon').textContent = '🔇';
-  webPlayerPanel.style.display = 'none';
+  clearTimeout(_webPlayerHideTimer);
+  _webPlayerHideTimer = null;
+  webPlayerPanel.classList.remove('visible');
   localStorage.removeItem('nambibot_weblisten');
   destroyWebAudio();
   webListenTrackUrl = null;
@@ -1095,8 +1140,8 @@ function stopWebListen() {
   webPlayerStatus.textContent = '';
   webPlayerStatus.className = 'web-player-status';
   if (isCurrentlyPlaying && !isVoiceConnected) {
-    nowPlayingHint.innerHTML = '음성 채널 연결 없이도 <button class="hint-fab-btn" id="hint-fab-trigger">🔊</button> 버튼으로 브라우저에서 바로 들을 수 있어요';
-    nowPlayingHint.style.display = '';
+    nowPlayingHint.innerHTML = '음성 채널 연결 없이도 우측 하단 <button class="hint-fab-btn" id="hint-fab-trigger"><svg viewBox="0.5 9 31 16" fill="none" width="14" height="9" style="vertical-align:0px;display:inline-block"><path d="M3 17 C3 6.5,29 6.5,29 17" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><rect x="0.5" y="15.5" width="5" height="8.5" rx="2" fill="currentColor" opacity="0.5"/><rect x="26.5" y="15.5" width="5" height="8.5" rx="2" fill="currentColor" opacity="0.5"/><rect x="7.5" y="13.5" width="17" height="12" rx="2.5" stroke="currentColor" stroke-width="1.3" fill="none"/><line x1="10.5" y1="17" x2="21.5" y2="17" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.3"/><circle cx="10.5" cy="17" r="1" fill="currentColor" opacity="0.5"/></svg></button> 버튼으로 브라우저에서 바로 들을 수 있어요';
+    nowPlayingHint.style.visibility = 'visible';
     const hintBtn = document.getElementById('hint-fab-trigger');
     if (hintBtn) hintBtn.addEventListener('click', () => { if (!webListenActive) startWebListen(); }, { once: true });
   }
@@ -1106,12 +1151,15 @@ let _webPlayBlocked = false;
 
 function _tryWebPlay() {
   if (!webAudio) return;
+  webAudio._internalPlay = true;
   webAudio.play().then(() => {
+    setTimeout(() => { if (webAudio) webAudio._internalPlay = false; }, 200);
     _webPlayBlocked = false;
     webPlayerStatus.textContent = '재생 중';
     webPlayerStatus.className = 'web-player-status';
     fabListen.classList.remove('blocked');
   }).catch(() => {
+    setTimeout(() => { if (webAudio) webAudio._internalPlay = false; }, 200);
     _webPlayBlocked = true;
     webPlayerStatus.textContent = '🔇 버튼을 클릭하여 재생';
     webPlayerStatus.className = 'web-player-status error';
@@ -1132,10 +1180,13 @@ function _resumeBlockedPlay() {
 
 const WEB_CROSSFADE_MS = 3000;
 let _crossfadeIntervals = [];
+let _fadingOutAudios = [];
 
 function destroyWebAudio() {
   _crossfadeIntervals.forEach(iv => clearInterval(iv));
   _crossfadeIntervals = [];
+  _fadingOutAudios.forEach(a => { try { a.pause(); a.removeAttribute('src'); a.load(); } catch {} });
+  _fadingOutAudios = [];
   if (webAudio) {
     webAudio.pause();
     webAudio.removeAttribute('src');
@@ -1146,6 +1197,7 @@ function destroyWebAudio() {
 
 function crossfadeOutOld(oldAudio) {
   if (!oldAudio) return;
+  _fadingOutAudios.push(oldAudio);
   const steps = Math.ceil(WEB_CROSSFADE_MS / 50);
   const startVol = oldAudio.volume;
   const delta = startVol / steps;
@@ -1155,6 +1207,7 @@ function crossfadeOutOld(oldAudio) {
     if (step >= steps || oldAudio.paused) {
       clearInterval(iv);
       _crossfadeIntervals = _crossfadeIntervals.filter(x => x !== iv);
+      _fadingOutAudios = _fadingOutAudios.filter(a => a !== oldAudio);
       oldAudio.pause();
       oldAudio.removeAttribute('src');
       oldAudio.load();
@@ -1192,7 +1245,7 @@ function syncWebAudio() {
   if (!currentPlayStartTs && !currentIsPaused) {
     destroyWebAudio();
     webListenTrackUrl = null;
-    _webLastPlayStartTs = null;
+    _webListenTitle = null;
     webPlayerTrack.textContent = isDownloading ? '다운로드 중...' : '재생 중인 곡 없음';
     webPlayerTrack.classList.toggle('idle', !isDownloading);
     webPlayerStatus.textContent = isDownloading ? '오디오 준비 대기 중' : '';
@@ -1200,19 +1253,28 @@ function syncWebAudio() {
     return;
   }
 
-  if (currentPlayStartTs && currentPlayStartTs !== _webLastPlayStartTs) {
-    _webLastPlayStartTs = currentPlayStartTs;
-    webListenTrackUrl = null;
-  }
-
   const streamUrl = `/api/stream/${gid}?t=${Date.now()}`;
 
   const nowTitle = document.querySelector('.track-title')?.textContent || '';
-  const trackKey = gid + ':' + nowTitle + ':' + currentPlayStartTs;
+  const trackKey = gid + ':' + nowTitle;
 
   if (webListenTrackUrl !== trackKey) {
     const oldAudio = webAudio;
+    const trackChanged = _webListenTitle !== null && _webListenTitle !== nowTitle;
+    _webListenTitle = nowTitle;
     webListenTrackUrl = trackKey;
+
+    if (trackChanged) {
+      _crossfadeIntervals.forEach(iv => clearInterval(iv));
+      _crossfadeIntervals = [];
+      _fadingOutAudios.forEach(a => { try { a.pause(); a.removeAttribute('src'); a.load(); } catch {} });
+      _fadingOutAudios = [];
+      if (oldAudio) {
+        oldAudio.pause();
+        oldAudio.removeAttribute('src');
+        oldAudio.load();
+      }
+    }
 
     webAudio = new Audio();
     const targetVol = parseInt(webPlayerVolume.value, 10) / 100;
@@ -1227,16 +1289,19 @@ function syncWebAudio() {
     webAudio.addEventListener('canplay', () => {
       seekWebAudio();
       if (!currentIsPaused) {
+        webAudio._internalPlay = true;
         webAudio.play().then(() => {
+          setTimeout(() => { if (webAudio) webAudio._internalPlay = false; }, 200);
           _webPlayBlocked = false;
           webPlayerStatus.textContent = '재생 중';
           webPlayerStatus.className = 'web-player-status';
           fabListen.classList.remove('blocked');
-          if (oldAudio && !oldAudio.paused) {
+          if (!trackChanged && oldAudio && !oldAudio.paused) {
             crossfadeOutOld(oldAudio);
           }
           crossfadeInNew(webAudio, targetVol);
         }).catch(() => {
+          setTimeout(() => { if (webAudio) webAudio._internalPlay = false; }, 200);
           _webPlayBlocked = true;
           webPlayerStatus.textContent = '🔇 버튼을 클릭하여 재생';
           webPlayerStatus.className = 'web-player-status error';
@@ -1259,17 +1324,68 @@ function syncWebAudio() {
       webPlayerStatus.textContent = '곡 종료';
       webPlayerStatus.className = 'web-player-status';
       webListenTrackUrl = null;
+      _webListenTitle = null;
+    });
+
+    webAudio.addEventListener('pause', () => {
+      if (!webAudio || webAudio._internalPause) return;
+      const g = currentGuildId || _playbackGuildId;
+      if (g && !currentIsPaused) {
+        socket.emit('cmd:pause', { guildId: g });
+      }
+    });
+
+    webAudio.addEventListener('play', () => {
+      if (!webAudio || webAudio._internalPlay) return;
+      const g = currentGuildId || _playbackGuildId;
+      if (g && currentIsPaused) {
+        socket.emit('cmd:resume', { guildId: g });
+      }
+    });
+
+    let _seekDebounce = null;
+    webAudio.addEventListener('seeked', () => {
+      if (!webAudio || webAudio._internalSeek) return;
+      const seekSec = webAudio.currentTime;
+      let expectedSec = 0;
+      if (currentIsPaused) {
+        expectedSec = pausedElapsed;
+      } else if (currentPlayStartTs) {
+        expectedSec = (Date.now() - currentPlayStartTs - currentPausedDuration) / 1000;
+      }
+      if (Math.abs(seekSec - expectedSec) < 2) return;
+      if (seekSec < 0.5 && expectedSec > 3) return;
+      if (currentIsPaused) {
+        pausedElapsed = seekSec;
+        updateProgressBar();
+      } else if (currentPlayStartTs) {
+        currentPlayStartTs = Date.now() - seekSec * 1000;
+        currentPausedDuration = 0;
+        updateProgressBar();
+      }
+      if (webAudio) webAudio._browserSeeking = true;
+      clearTimeout(_seekDebounce);
+      _seekDebounce = setTimeout(() => {
+        if (!webAudio) return;
+        const g = currentGuildId || _playbackGuildId;
+        if (g && currentDuration > 0) {
+          socket.emit('cmd:seek', { guildId: g, seconds: webAudio.currentTime });
+        }
+        setTimeout(() => { if (webAudio) webAudio._browserSeeking = false; }, 1000);
+      }, 300);
     });
 
     webAudio.src = streamUrl;
     webAudio.load();
   } else if (webAudio) {
+    seekWebAudio();
     if (currentIsPaused) {
+      webAudio._internalPause = true;
       webAudio.pause();
+      setTimeout(() => { if (webAudio) webAudio._internalPause = false; }, 200);
       webPlayerStatus.textContent = '일시정지';
       webPlayerStatus.className = 'web-player-status';
     } else {
-      seekWebAudio();
       _tryWebPlay();
     }
   }
@@ -1277,6 +1393,7 @@ function syncWebAudio() {
 
 function seekWebAudio() {
   if (!webAudio || !webAudio.duration || isNaN(webAudio.duration)) return;
+  if (webAudio._browserSeeking) return;
   let targetSec;
   if (currentIsPaused) {
     targetSec = pausedElapsed;
@@ -1287,7 +1404,9 @@ function seekWebAudio() {
   }
   targetSec = Math.max(0, Math.min(targetSec, webAudio.duration));
   if (Math.abs(webAudio.currentTime - targetSec) > 1.5) {
+    webAudio._internalSeek = true;
     webAudio.currentTime = targetSec;
+    setTimeout(() => { if (webAudio) webAudio._internalSeek = false; }, 500);
   }
 }
 

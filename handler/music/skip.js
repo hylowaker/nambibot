@@ -15,21 +15,12 @@ async function execute(interaction) {
     });
   }
 
-  if (!state.playStartTs) {
-    return interaction.reply({
-      content: '⏳ 현재 곡을 불러오는 중입니다. 로딩이 끝난 후 다시 시도해주세요.',
-      flags: MessageFlags.Ephemeral,
-    });
-  }
-
   const current = state.currentItem;
   const item    = state.queue.shift();
   if (current) state.queue.push(current);
 
-  if (state.player.state.status !== AudioPlayerStatus.Idle) {
-    state._skipAutoAdvance = true;
-    state.player.stop();
-  }
+  state._skipAutoAdvance = true;
+  state.player.stop();
 
   const embed = new EmbedBuilder()
     .setColor(0x6080FF)

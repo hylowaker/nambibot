@@ -19,14 +19,11 @@
     </filter>
   </defs>
 
-  <rect width="600" height="140" rx="16" fill="url(#bg)"/>
-  <rect width="600" height="140" rx="16" fill="none" stroke="rgba(96,128,255,0.2)" stroke-width="1"/>
-
   <!-- CD disc icon -->
   <circle cx="80" cy="70" r="38" fill="none" stroke="url(#disc-grad)" stroke-width="2.5" opacity="0.8"/>
   <circle cx="80" cy="70" r="24" fill="none" stroke="rgba(96,128,255,0.15)" stroke-width="1"/>
   <circle cx="80" cy="70" r="14" fill="url(#disc-grad)" opacity="0.7"/>
-  <circle cx="80" cy="70" r="5" fill="#0a0e1a"/>
+  <circle cx="80" cy="70" r="5" fill="transparent"/>
   <!-- Music note on disc -->
   <rect x="86" y="48" width="2.5" height="16" rx="1.2" fill="white" opacity="0.9"/>
   <circle cx="84" cy="64" r="4" fill="white" opacity="0.9"/>

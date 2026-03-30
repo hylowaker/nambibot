@@ -8,6 +8,18 @@ const stateBus = require('./stateBus');
 
 function bumpQueue(state) { state._queueVersion = (state._queueVersion ?? 0) + 1; }
 
+function cleanupSeek(state) {
+  clearTimeout(state._seekCooldownTimer);
+  state._seekCooldownTimer = null;
+  state._seekCooldown = false;
+  state._seekPendingSec = null;
+  state._pendingSeekSec = null;
+  if (state._seekFfProc) {
+    try { state._seekFfProc.kill('SIGKILL'); } catch {}
+    state._seekFfProc = null;
+  }
+}
+
 async function queue(client, guildId, url, onProgress) {
   if (typeof url !== 'string' || !(url.startsWith('http://') || url.startsWith('https://'))) {
     throw new Error('유효하지 않은 URL입니다. http:// 또는 https://로 시작해야 합니다.');
@@ -42,9 +54,7 @@ async function play(client, guildId, index) {
   const i = (index ?? 1) - 1;
   if (i < 0 || i >= state.queue.length) throw new Error('유효하지 않은 인덱스입니다.');
 
-  if (state.currentItem && !state.playStartTs) {
-    throw new Error('현재 곡을 불러오는 중입니다. 로딩이 끝난 후 다시 시도해주세요.');
-  }
+  cleanupSeek(state);
 
   const [item] = state.queue.splice(i, 1);
   cleanupPrefetch(state);
@@ -55,18 +65,17 @@ async function play(client, guildId, index) {
     notice = `"${state.currentItem.title}" 이(가) 대기열 ${i + 1}번으로 이동했습니다.`;
   }
 
-  if (state.player.state.status !== AudioPlayerStatus.Idle) {
-    state._skipAutoAdvance = true;
-    state.player.stop();
-  }
+  state._skipAutoAdvance = true;
+  state.player.stop();
+
   bumpQueue(state);
   stateBus.emit('stateChanged', guildId);
-  setImmediate(() => playItem(state, item).catch((err) => {
+  playItem(state, item).catch((err) => {
     console.error(`[player] [${guildId}] 재생 오류:`, err);
     state.currentItem = null;
     state.playStartTs = null;
     stateBus.emit('stateChanged', guildId);
-  }));
+  });
   return notice;
 }
 
@@ -92,11 +101,16 @@ function resume(client, guildId) {
       const seekSec = state._pendingSeekSec;
       state._pendingSeekSec = null;
 
+      if (state._seekFfProc) {
+        try { state._seekFfProc.kill('SIGKILL'); } catch {}
+      }
       const ffProc = spawn(ytdlp.FFMPEG_BIN, [
         '-ss', String(seekSec),
         '-i', state._audioFilePath,
-        '-vn', '-c:a', 'libopus', '-b:a', '128k', '-f', 'ogg', 'pipe:1',
+        '-vn', '-af', 'afade=t=in:d=0.12', '-c:a', 'libopus', '-b:a', '128k', '-f', 'ogg', 'pipe:1',
       ], { stdio: ['ignore', 'pipe', 'ignore'] });
+      state._seekFfProc = ffProc;
+      ffProc.on('close', () => { if (state._seekFfProc === ffProc) state._seekFfProc = null; });
 
       const resource = createAudioResource(ffProc.stdout, { inputType: StreamType.OggOpus });
 
@@ -132,6 +146,7 @@ function deleteCurrent(client, guildId) {
   initPlayer(guildId);
   const state = getState(guildId);
   if (!state.currentItem) throw new Error('재생 중인 항목이 없습니다.');
+  cleanupSeek(state);
   state._stopRequested = true;
   state.currentItem = null;
   state.player.stop();
@@ -142,7 +157,7 @@ async function skip(client, guildId) {
   initPlayer(guildId);
   const state = getState(guildId);
   if (!state.currentItem) throw new Error('재생 중인 항목이 없습니다.');
-  if (!state.playStartTs) throw new Error('현재 곡을 불러오는 중입니다. 로딩이 끝난 후 다시 시도해주세요.');
+  cleanupSeek(state);
 
   const skipped = state.currentItem;
   const nextItem = state.queue.shift() ?? null;
@@ -244,10 +259,10 @@ async function playNow(client, guildId, url, onProgress) {
   }
   initPlayer(guildId);
   const state = getState(guildId);
+  cleanupSeek(state);
 
-  if (state.currentItem && !state.playStartTs) {
-    throw new Error('현재 곡을 불러오는 중입니다. 로딩이 끝난 후 다시 시도해주세요.');
-  }
+  state._skipAutoAdvance = true;
+  state.player.stop();
 
   onProgress?.({ status: 'fetching', current: 0, total: null });
   const items = await ytdlp.getInfo(url, (current, total) => {
@@ -264,16 +279,14 @@ async function playNow(client, guildId, url, onProgress) {
 
   if (state.currentItem) {
     state.queue.unshift(state.currentItem);
-    if (state.player.state.status !== AudioPlayerStatus.Idle) {
-      state._skipAutoAdvance = true;
-      state.player.stop();
-    }
   }
 
   bumpQueue(state);
   stateBus.emit('stateChanged', guildId);
   await playItem(state, first);
 }
+
+const SEEK_COOLDOWN_MS = 400;
 
 function seek(client, guildId, seconds) {
   initPlayer(guildId);
@@ -293,46 +306,85 @@ function seek(client, guildId, seconds) {
     state._pauseStartTs = Date.now();
     state._elapsedAtPause = seekSec * 1000;
     stateBus.emit('stateChanged', guildId);
-  } else {
-    const ffProc = spawn(ytdlp.FFMPEG_BIN, [
-      '-ss', String(seekSec),
-      '-i', state._audioFilePath,
-      '-vn',
-      '-c:a', 'libopus',
-      '-b:a', '128k',
-      '-f', 'ogg',
-      'pipe:1',
-    ], { stdio: ['ignore', 'pipe', 'ignore'] });
-
-    const resource = createAudioResource(ffProc.stdout, {
-      inputType: StreamType.OggOpus,
-    });
-    state._suppressStateChange = true;
-    try {
-      state._skipAutoAdvance = true;
-      state.player.stop();
-      state._skipAutoAdvance = false;
-
-      state.playStartTs = Date.now() - (seekSec * 1000);
-      state.pausedDuration = 0;
-      state._pauseStartTs = null;
-      state._elapsedAtPause = null;
-
-      if (state.connection) {
-        state.connection.subscribe(state.player);
+  } else if (!state._seekCooldown) {
+    _executeSeek(state, guildId, seekSec);
+    state._seekCooldown = true;
+    state._seekPendingSec = null;
+    state._seekCooldownTimer = setTimeout(() => {
+      state._seekCooldown = false;
+      state._seekCooldownTimer = null;
+      if (state._seekPendingSec != null) {
+        const pending = state._seekPendingSec;
+        state._seekPendingSec = null;
+        _executeSeek(state, guildId, pending);
       }
-      state.player.play(resource);
-    } finally {
-      state._suppressStateChange = false;
-    }
-    const { scheduleAutoAdvance } = require('../player');
-    const remainDur = state.currentItem.duration ? state.currentItem.duration - seekSec : 0;
-    if (remainDur > 0) {
-      scheduleAutoAdvance(state, { ...state.currentItem, duration: remainDur });
-    }
+    }, SEEK_COOLDOWN_MS);
+  } else {
+    state._seekPendingSec = seekSec;
+    state.playStartTs = Date.now() - (seekSec * 1000);
+    state.pausedDuration = 0;
+    state._pauseStartTs = null;
+    state._elapsedAtPause = null;
     stateBus.emit('stateChanged', guildId);
   }
   console.log(`[player] [${guildId}] 탐색: ${Math.floor(seekSec / 60)}:${String(Math.floor(seekSec) % 60).padStart(2, '0')}${wasPaused ? ' (일시정지 유지)' : ''}`);
+}
+
+function _executeSeek(state, guildId, seekSec) {
+  if (!state.currentItem || !state._audioFilePath) return;
+  const seekItem = state.currentItem;
+
+  const oldFfProc = state._seekFfProc;
+
+  const ffProc = spawn(ytdlp.FFMPEG_BIN, [
+    '-ss', String(seekSec),
+    '-i', state._audioFilePath,
+    '-vn',
+    '-af', 'afade=t=in:d=0.12',
+    '-c:a', 'libopus',
+    '-b:a', '128k',
+    '-f', 'ogg',
+    'pipe:1',
+  ], { stdio: ['ignore', 'pipe', 'ignore'] });
+  state._seekFfProc = ffProc;
+  ffProc.on('close', () => { if (state._seekFfProc === ffProc) state._seekFfProc = null; });
+
+  const resource = createAudioResource(ffProc.stdout, {
+    inputType: StreamType.OggOpus,
+  });
+  state._suppressStateChange = true;
+  try {
+    state._skipAutoAdvance = true;
+    state.player.stop();
+    state._skipAutoAdvance = false;
+
+    if (state.currentItem !== seekItem) {
+      try { ffProc.kill('SIGKILL'); } catch {}
+      if (state._seekFfProc === ffProc) state._seekFfProc = null;
+      return;
+    }
+
+    state.playStartTs = Date.now() - (seekSec * 1000);
+    state.pausedDuration = 0;
+    state._pauseStartTs = null;
+    state._elapsedAtPause = null;
+
+    if (state.connection) {
+      state.connection.subscribe(state.player);
+    }
+    state.player.play(resource);
+  } finally {
+    state._suppressStateChange = false;
+  }
+  if (oldFfProc) {
+    try { oldFfProc.kill('SIGKILL'); } catch {}
+  }
+  const { scheduleAutoAdvance } = require('../player');
+  const remainDur = state.currentItem.duration ? state.currentItem.duration - seekSec : 0;
+  if (remainDur > 0) {
+    scheduleAutoAdvance(state, { ...state.currentItem, duration: remainDur });
+  }
+  stateBus.emit('stateChanged', guildId);
 }
 
 module.exports = { queue, play, pause, resume, deleteCurrent, skip, reorder, del, purge, shuffle, dedupe, join, leave, playNow, seek };

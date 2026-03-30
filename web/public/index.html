@@ -52,9 +52,9 @@
           </div>
 
           <div class="now-playing-info">
-            <div id="now-playing-title" class="now-playing-title idle">재생 중인 항목 없음</div>
-            <div id="now-playing-sub" class="now-playing-sub" style="display:none"></div>
-            <div id="play-progress" class="play-progress" style="display:none">
+            <div id="now-playing-title" class="now-playing-title idle"><div class="track-title">재생 중인 항목 없음</div><span class="track-url" style="visibility:hidden">&nbsp;</span></div>
+            <div id="now-playing-sub" class="now-playing-sub" style="visibility:hidden">&nbsp;</div>
+            <div id="play-progress" class="play-progress" style="visibility:hidden">
               <div class="play-progress-bar-track">
                 <div id="play-progress-fill" class="play-progress-fill"></div>
                 <div id="seek-tooltip" class="seek-tooltip" style="display:none"></div>
@@ -64,13 +64,13 @@
                 <span id="play-progress-duration"></span>
               </div>
             </div>
-            <div class="controls">
+            <div class="controls" style="visibility:hidden">
               <button class="btn-secondary" id="btn-pause">⏸ 일시정지</button>
               <button class="btn-primary"   id="btn-resume" style="display:none">▶ 재개</button>
               <button class="btn-primary"   id="btn-skip">⏭ 스킵</button>
               <button class="btn-danger"    id="btn-delete-current">✕ 삭제</button>
             </div>
-            <div id="now-playing-hint" class="now-playing-hint" style="display:none"></div>
+            <div id="now-playing-hint" class="now-playing-hint" style="visibility:hidden">&nbsp;</div>
           </div>
         </div>
       </div>
@@ -146,12 +146,24 @@
 
 
   <button id="fab-listen" class="fab-listen" title="브라우저에서 듣기">
-    <span class="fab-icon">🔇</span>
+    <svg class="fab-cast-svg" viewBox="3 10.5 26 14" fill="none">
+      <path class="fab-cast-band" d="M3 17 C3 6.5, 29 6.5, 29 17" stroke-width="2.4" stroke-linecap="round"/>
+      <rect class="fab-cast-ear fab-cast-ear-l" x="0.5" y="15.5" width="5" height="8.5" rx="2"/>
+      <rect class="fab-cast-ear fab-cast-ear-r" x="26.5" y="15.5" width="5" height="8.5" rx="2"/>
+      <rect class="fab-cast-win" x="7.5" y="13.5" width="17" height="12" rx="2.5"/>
+      <line class="fab-cast-bar" x1="10.5" y1="17" x2="21.5" y2="17" stroke-width="1" stroke-linecap="round"/>
+      <circle class="fab-cast-dot" cx="10.5" cy="17" r="1"/>
+      <!-- active: eq bars inside window -->
+      <rect class="fab-cast-eq" x="11" y="21" width="1.8" height="3" rx="0.5"/>
+      <rect class="fab-cast-eq" x="14" y="19.5" width="1.8" height="4.5" rx="0.5"/>
+      <rect class="fab-cast-eq" x="17" y="20.5" width="1.8" height="3.5" rx="0.5"/>
+      <rect class="fab-cast-eq" x="20" y="21.5" width="1.8" height="2.5" rx="0.5"/>
+      <line class="fab-cast-slash" x1="4" y1="26" x2="28" y2="10" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
   </button>
-  <div id="web-player" class="web-player" style="display:none">
+  <div id="web-player" class="web-player">
     <div class="web-player-header">
-      <span class="web-player-title">🎧 브라우저 재생</span>
-      <button id="web-player-close" class="web-player-close">✕</button>
+      <span class="web-player-title">브라우저 재생</span>
     </div>
     <div class="web-player-body">
       <div id="web-player-track" class="web-player-track">재생 중인 곡 없음</div>

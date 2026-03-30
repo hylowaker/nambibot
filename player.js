@@ -5,10 +5,22 @@ const { getState } = require('./state');
 const ytdlp = require('./ytdlp');
 const stateBus = require('./web/stateBus');
 
+const LOADING_TIMEOUT_MS = 60_000;
+
 async function playItem(state, item) {
   const guildId = state._guildId;
 
   state._stopRequested = false;
+
+  clearTimeout(state._seekCooldownTimer);
+  state._seekCooldownTimer = null;
+  state._seekCooldown = false;
+  state._seekPendingSec = null;
+  if (state._seekFfProc) {
+    try { state._seekFfProc.kill('SIGKILL'); } catch {}
+    state._seekFfProc = null;
+  }
+  state._pendingSeekSec = null;
 
   state.currentItem = item;
   state.playStartTs = null;
@@ -22,8 +34,28 @@ async function playItem(state, item) {
 
   stateBus.emit('stateChanged', guildId);
 
+  const loadingTimer = setTimeout(() => {
+    if (state.currentItem === item && !state.playStartTs) {
+      console.error(`[player] [${guildId}] 로딩 타임아웃 (${LOADING_TIMEOUT_MS / 1000}s): "${item.title}" — 상태 초기화`);
+      state.currentItem = null;
+      state.playStartTs = null;
+      state.downloadProgress = null;
+      state._stopRequested = false;
+      stateBus.emit('stateChanged', guildId);
+      const next = state.queue.shift();
+      if (next) {
+        state._queueVersion = (state._queueVersion ?? 0) + 1;
+        console.log(`[player] [${guildId}] 다음 곡으로 이동: "${next.title}"`);
+        playItem(state, next).catch(err => {
+          console.error(`[player] [${guildId}] 자동 재생 오류:`, err);
+        });
+      }
+    }
+  }, LOADING_TIMEOUT_MS);
+
   let tmpPath;
   if (state._prefetchedPath && state._prefetchedUrl === item.url && existsSync(state._prefetchedPath)) {
+    clearTimeout(loadingTimer);
     tmpPath = state._prefetchedPath;
     state._prefetchedPath = null;
     state._prefetchedUrl = null;
@@ -38,6 +70,7 @@ async function playItem(state, item) {
     let lastEmittedPct = -1;
     try {
       tmpPath = await ytdlp.createAudioFile(item.url, (pct) => {
+        if (state.currentItem !== item) return;
         if (pct - lastEmittedPct >= 10 || pct === 100) {
           lastEmittedPct = pct;
           state.downloadProgress = pct;
@@ -45,6 +78,8 @@ async function playItem(state, item) {
         }
       });
     } catch (err) {
+      clearTimeout(loadingTimer);
+      if (state.currentItem !== item) return;
       console.error(`[player] [${guildId}] 다운로드 실패 — 건너뜀: "${item.title}"  오류: ${err.message}`);
       state.currentItem = null;
       state.playStartTs = null;
@@ -60,12 +95,18 @@ async function playItem(state, item) {
       }
       return;
     }
+    clearTimeout(loadingTimer);
     state.downloadProgress = null;
     const elapsed = ((Date.now() - downloadStart) / 1000).toFixed(1);
 
     let fileSize = '?';
     try { fileSize = `${(statSync(tmpPath).size / 1024).toFixed(0)} KB`; } catch {}
     console.log(`[player] [${guildId}] 다운로드 완료: ${fileSize}  소요: ${elapsed}s  파일: ${tmpPath}`);
+  }
+
+  if (state.currentItem !== item) {
+    unlink(tmpPath, (err) => { if (err && err.code !== 'ENOENT') console.warn('[player] 임시 파일 삭제 실패:', tmpPath); });
+    return;
   }
 
   if (state._stopRequested) {
